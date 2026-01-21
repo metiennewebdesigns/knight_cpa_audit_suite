@@ -1,0 +1,31 @@
+{
+  "clients": 12,
+  "engagements": 5,
+  "workpapers": 34,
+  "recentClients": [
+    {
+      "id": "goddess-collection",
+      "name": "The Goddess Collection",
+      "cityState": "Kenner, LA",
+      "updatedAt": "2026-01-21",
+      "statusLabel": "Active"
+    },
+    {
+      "id": "dsg-luxury",
+      "name": "DSG Luxury Transportation",
+      "cityState": "Dayton, TX",
+      "updatedAt": "2026-01-20",
+      "statusLabel": "Active"
+    },
+    {
+      "id": "knight-cpa",
+      "name": "Knight CPA Services",
+      "cityState": "New Orleans, LA",
+      "updatedAt": "2026-01-18",
+      "statusLabel": "Onboarding"
+    }
+  ],
+  "clientsList": [],
+  "engagementsList": [],
+  "workpapersList": []
+}
