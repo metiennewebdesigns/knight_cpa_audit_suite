@@ -15,18 +15,17 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final router = AppRouter.build(store: store, themeMode: themeMode);
+
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeMode,
       builder: (context, mode, _) {
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
           themeMode: mode,
-          theme: ThemeData.light(),
-          darkTheme: ThemeData.dark(),
-          routerConfig: AppRouter.build(
-            store: store,
-            themeMode: themeMode,
-          ),
+          theme: ThemeData.light(useMaterial3: true),
+          darkTheme: ThemeData.dark(useMaterial3: true),
+          routerConfig: router,
         );
       },
     );

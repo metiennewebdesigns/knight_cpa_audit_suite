@@ -1,42 +1,36 @@
 import 'package:flutter/material.dart';
-
 import '../../../core/storage/local_store.dart';
 
 class EngagementDetailScreen extends StatelessWidget {
   const EngagementDetailScreen({
     super.key,
     required this.store,
+    required this.themeMode,
     required this.engagementId,
   });
 
   final LocalStore store;
+  final ValueNotifier<ThemeMode> themeMode;
   final String engagementId;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Engagement Detail'),
-      ),
+      appBar: AppBar(title: const Text('Engagement Detail')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  'Engagement ID: $engagementId',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                const Text('This is a placeholder details page.'),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Back'),
+                const Icon(Icons.assignment_outlined),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Engagement ID: $engagementId',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
               ],
             ),

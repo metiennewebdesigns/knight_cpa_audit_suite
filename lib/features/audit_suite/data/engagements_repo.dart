@@ -1,67 +1,41 @@
-import 'dart:convert';
-import '../../../core/storage/local_store.dart';
+class EngagementsRepo {
+  Future<List<Engagement>> list() async {
+    return const [
+      Engagement(
+        id: 'eng-001',
+        title: 'FY 2025 Audit',
+        clientName: 'The Goddess Collection',
+        status: 'Active',
+      ),
+      Engagement(
+        id: 'eng-002',
+        title: 'Tax Prep + Review',
+        clientName: 'DSG Luxury Transportation',
+        status: 'In Review',
+      ),
+    ];
+  }
 
-class Engagement {
-  Engagement({
-    required this.id,
-    required this.clientName,
-    required this.entityType,
-    required this.jurisdiction,
-    required this.taxYears,
-    required this.status,
-    required this.updatedAt,
-    required this.riskScore,
-  });
-
-  final String id;
-  final String clientName;
-  final String entityType;
-  final String jurisdiction;
-  final List<int> taxYears;
-  final String status;
-  final DateTime updatedAt;
-  final int riskScore;
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'clientName': clientName,
-        'entityType': entityType,
-        'jurisdiction': jurisdiction,
-        'taxYears': taxYears,
-        'status': status,
-        'updatedAt': updatedAt.toIso8601String(),
-        'riskScore': riskScore,
-      };
-
-  static Engagement fromJson(Map<String, dynamic> j) => Engagement(
-        id: j['id'],
-        clientName: j['clientName'],
-        entityType: j['entityType'],
-        jurisdiction: j['jurisdiction'],
-        taxYears: List<int>.from(j['taxYears']),
-        status: j['status'],
-        updatedAt: DateTime.parse(j['updatedAt']),
-        riskScore: j['riskScore'],
-      );
+  Future<Engagement?> byId(String id) async {
+    final all = await list();
+    try {
+      return all.firstWhere((e) => e.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
-class EngagementsRepo {
-  EngagementsRepo(this.store);
-  final LocalStore store;
+class Engagement {
+  final String id;
+  final String title;
+  final String clientName;
+  final String status;
 
-  static const _key = 'engagements';
-
-  Future<List<Engagement>> list() async {
-    final raw = store.getString(_key);
-    if (raw == null) return [];
-    final data = jsonDecode(raw) as List;
-    return data.map((e) => Engagement.fromJson(e)).toList();
-  }
-
-  Future<void> save(List<Engagement> items) async {
-    await store.setString(
-      _key,
-      jsonEncode(items.map((e) => e.toJson()).toList()),
-    );
-  }
+  const Engagement({
+    required this.id,
+    required this.title,
+    required this.clientName,
+    required this.status,
+  });
 }

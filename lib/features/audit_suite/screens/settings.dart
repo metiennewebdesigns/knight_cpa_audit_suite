@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../../core/storage/local_store.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -16,20 +15,51 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: Card(
-          child: ListTile(
-            title: const Text('Theme'),
-            subtitle: const Text('Tap to toggle light/dark'),
-            trailing: const Icon(Icons.brightness_6),
-            onTap: () {
-              final current = themeMode.value;
-              themeMode.value =
-                  (current == ThemeMode.dark) ? ThemeMode.light : ThemeMode.dark;
-            },
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: ValueListenableBuilder<ThemeMode>(
+                valueListenable: themeMode,
+                builder: (context, mode, _) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Theme',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButton<ThemeMode>(
+                        value: mode,
+                        isExpanded: true,
+                        onChanged: (v) {
+                          if (v != null) themeMode.value = v;
+                        },
+                        items: const [
+                          DropdownMenuItem(
+                            value: ThemeMode.system,
+                            child: Text('System'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.light,
+                            child: Text('Light'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.dark,
+                            child: Text('Dark'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

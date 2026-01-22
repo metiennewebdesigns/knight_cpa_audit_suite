@@ -1,22 +1,28 @@
-"engagementsList": [
-  {
-    "id": "eng-1001",
-    "clientName": "The Goddess Collection",
-    "entityType": "LLC",
-    "jurisdiction": "Louisiana",
-    "taxYears": "2024",
-    "status": "In Progress",
-    "createdAt": "2026-01-10",
-    "updatedAt": "2026-01-21"
-  },
-  {
-    "id": "eng-1002",
-    "clientName": "DSG Luxury Transportation",
-    "entityType": "LLC",
-    "jurisdiction": "Texas",
-    "taxYears": "2023-2024",
-    "status": "Planning",
-    "createdAt": "2026-01-12",
-    "updatedAt": "2026-01-20"
-  }
-]
+{
+  "clients": [
+    { "id": "the-goddess-collection", "name": "The Goddess Collection", "location": "Kenner, LA" },
+    { "id": "dsg-luxury-transportation", "name": "DSG Luxury Transportation", "location": "Dayton, TX" }
+  ],
+  "engagements": [
+    {
+      "id": "eng-001",
+      "clientId": "the-goddess-collection",
+      "title": "FY 2025 Audit",
+      "status": "Active",
+      "createdAt": "2026-01-10",
+      "updatedAt": "2026-01-21"
+    },
+    {
+      "id": "eng-002",
+      "clientId": "dsg-luxury-transportation",
+      "title": "Tax Prep + Review",
+      "status": "In Review",
+      "createdAt": "2026-01-14",
+      "updatedAt": "2026-01-20"
+    }
+  ],
+  "reports": [
+    { "id": "rep-001", "engagementId": "eng-001", "name": "Planning Memo", "status": "Draft" },
+    { "id": "rep-002", "engagementId": "eng-002", "name": "Trial Balance Review", "status": "Final" }
+  ]
+}
