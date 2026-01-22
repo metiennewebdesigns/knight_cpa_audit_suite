@@ -1,44 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/storage/local_store.dart';
+
 class EngagementsListScreen extends StatelessWidget {
-  const EngagementsListScreen({super.key});
+  const EngagementsListScreen({
+    super.key,
+    required this.store,
+  });
+
+  final LocalStore store;
 
   @override
   Widget build(BuildContext context) {
     final engagements = const [
-      {
-        'id': 'eng-1001',
-        'client': 'The Goddess Collection',
-        'status': 'In Progress',
-        'years': '2024',
-      },
-      {
-        'id': 'eng-1002',
-        'client': 'DSG Luxury Transportation',
-        'status': 'Planning',
-        'years': '2023–2024',
-      },
+      _Eng(id: 'eng-1001', name: '2025 Tax Return', client: 'The Goddess Collection'),
+      _Eng(id: 'eng-1002', name: 'Audit - Q4 Review', client: 'DSG Luxury Transportation'),
+      _Eng(id: 'eng-1003', name: 'Bookkeeping Cleanup', client: 'Knight CPA Services'),
     ];
 
     return Scaffold(
       appBar: AppBar(title: const Text('Engagements')),
       body: ListView.separated(
-        padding: const EdgeInsets.all(16),
         itemCount: engagements.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (_, __) => const Divider(height: 1),
         itemBuilder: (context, i) {
           final e = engagements[i];
-          return Card(
-            child: ListTile(
-              title: Text(e['client']!),
-              subtitle: Text('Tax Years: ${e['years']}'),
-              trailing: Text(e['status']!),
-              onTap: () => context.push('/engagements/${e['id']}'),
-            ),
+          return ListTile(
+            leading: const Icon(Icons.work),
+            title: Text(e.name),
+            subtitle: Text(e.client),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/engagements/${e.id}'),
           );
         },
       ),
     );
   }
+}
+
+class _Eng {
+  const _Eng({required this.id, required this.name, required this.client});
+  final String id;
+  final String name;
+  final String client;
 }
