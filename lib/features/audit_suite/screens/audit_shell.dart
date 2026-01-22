@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
-
-import '../../../core/storage/local_store.dart';
-import 'dashboard.dart';
+import 'package:go_router/go_router.dart';
 
 class AuditShell extends StatefulWidget {
   const AuditShell({
     super.key,
-    required this.store,
+    required this.child,
     required this.themeMode,
   });
 
-  final LocalStore store;
+  final Widget child;
   final ValueNotifier<ThemeMode> themeMode;
 
   @override
@@ -18,75 +16,67 @@ class AuditShell extends StatefulWidget {
 }
 
 class _AuditShellState extends State<AuditShell> {
-  int _index = 0;
+  static const _tabs = <_TabItem>[
+    _TabItem(label: 'Home', icon: Icons.home_rounded, route: '/'),
+    _TabItem(label: 'Clients', icon: Icons.people_alt_rounded, route: '/clients'),
+    _TabItem(label: 'Engagements', icon: Icons.assignment_rounded, route: '/engagements'),
+    _TabItem(label: 'Reports', icon: Icons.bar_chart_rounded, route: '/reports'),
+    _TabItem(label: 'Settings', icon: Icons.settings_rounded, route: '/settings'),
+  ];
+
+  int _locationToIndex(String location) {
+    // Match by prefix so /engagements/123 stays on Engagements tab.
+    for (var i = 0; i < _tabs.length; i++) {
+      final r = _tabs[i].route;
+      if (location == r || (r != '/' && location.startsWith(r))) return i;
+    }
+    return 0;
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Each tab is a full screen (Scaffold). The bottom nav stays in THIS shell.
-    final tabs = <Widget>[
-      DashboardScreen(store: widget.store, themeMode: widget.themeMode),
-      _ClientsTab(store: widget.store, themeMode: widget.themeMode),
-      _EngagementsTab(store: widget.store, themeMode: widget.themeMode),
-      _ReportsTab(store: widget.store, themeMode: widget.themeMode),
-    ];
+    final location = GoRouterState.of(context).uri.toString();
+    final currentIndex = _locationToIndex(location);
 
     return Scaffold(
-      body: IndexedStack(index: _index, children: tabs),
+      appBar: AppBar(
+        title: const Text('Knight CPA Audit Suite'),
+        actions: [
+          IconButton(
+            tooltip: 'Toggle theme',
+            icon: ValueListenableBuilder<ThemeMode>(
+              valueListenable: widget.themeMode,
+              builder: (context, mode, _) {
+                return Icon(
+                  mode == ThemeMode.dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                );
+              },
+            ),
+            onPressed: () {
+              final current = widget.themeMode.value;
+              widget.themeMode.value =
+                  current == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+            },
+          ),
+        ],
+      ),
+      body: widget.child,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard), label: 'Dashboard'),
-          NavigationDestination(icon: Icon(Icons.people), label: 'Clients'),
-          NavigationDestination(icon: Icon(Icons.assignment), label: 'Engagements'),
-          NavigationDestination(icon: Icon(Icons.description), label: 'Reports'),
+        selectedIndex: currentIndex,
+        onDestinationSelected: (index) {
+          context.go(_tabs[index].route);
+        },
+        destinations: [
+          for (final t in _tabs) NavigationDestination(icon: Icon(t.icon), label: t.label),
         ],
       ),
     );
   }
 }
 
-class _ClientsTab extends StatelessWidget {
-  const _ClientsTab({required this.store, required this.themeMode});
-
-  final LocalStore store;
-  final ValueNotifier<ThemeMode> themeMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Clients')),
-      body: const Center(child: Text('Clients tab ✅')),
-    );
-  }
-}
-
-class _EngagementsTab extends StatelessWidget {
-  const _EngagementsTab({required this.store, required this.themeMode});
-
-  final LocalStore store;
-  final ValueNotifier<ThemeMode> themeMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Engagements')),
-      body: const Center(child: Text('Engagements tab ✅')),
-    );
-  }
-}
-
-class _ReportsTab extends StatelessWidget {
-  const _ReportsTab({required this.store, required this.themeMode});
-
-  final LocalStore store;
-  final ValueNotifier<ThemeMode> themeMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Reports')),
-      body: const Center(child: Text('Reports tab ✅')),
-    );
-  }
+class _TabItem {
+  const _TabItem({required this.label, required this.icon, required this.route});
+  final String label;
+  final IconData icon;
+  final String route;
 }

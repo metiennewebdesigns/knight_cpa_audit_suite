@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-import 'app.dart';
 import 'core/storage/local_store.dart';
+import 'app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final prefs = await SharedPreferences.getInstance();
-  final store = LocalStore(prefs);
+  // Your LocalStore has a static create() (you already confirmed it exists).
+  final store = await LocalStore.create();
 
-  runApp(App(store: store));
+  final themeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
+
+  runApp(App(store: store, themeMode: themeMode));
 }

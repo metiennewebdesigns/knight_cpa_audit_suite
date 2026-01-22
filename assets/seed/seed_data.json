@@ -1,31 +1,22 @@
-{
-  "clients": 12,
-  "engagements": 5,
-  "workpapers": 34,
-  "recentClients": [
-    {
-      "id": "goddess-collection",
-      "name": "The Goddess Collection",
-      "cityState": "Kenner, LA",
-      "updatedAt": "2026-01-21",
-      "statusLabel": "Active"
-    },
-    {
-      "id": "dsg-luxury",
-      "name": "DSG Luxury Transportation",
-      "cityState": "Dayton, TX",
-      "updatedAt": "2026-01-20",
-      "statusLabel": "Active"
-    },
-    {
-      "id": "knight-cpa",
-      "name": "Knight CPA Services",
-      "cityState": "New Orleans, LA",
-      "updatedAt": "2026-01-18",
-      "statusLabel": "Onboarding"
-    }
-  ],
-  "clientsList": [],
-  "engagementsList": [],
-  "workpapersList": []
-}
+"engagementsList": [
+  {
+    "id": "eng-1001",
+    "clientName": "The Goddess Collection",
+    "entityType": "LLC",
+    "jurisdiction": "Louisiana",
+    "taxYears": "2024",
+    "status": "In Progress",
+    "createdAt": "2026-01-10",
+    "updatedAt": "2026-01-21"
+  },
+  {
+    "id": "eng-1002",
+    "clientName": "DSG Luxury Transportation",
+    "entityType": "LLC",
+    "jurisdiction": "Texas",
+    "taxYears": "2023-2024",
+    "status": "Planning",
+    "createdAt": "2026-01-12",
+    "updatedAt": "2026-01-20"
+  }
+]

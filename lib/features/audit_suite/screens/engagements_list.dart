@@ -1,49 +1,43 @@
 import 'package:flutter/material.dart';
-import '../../../core/storage/local_store.dart';
+import 'package:go_router/go_router.dart';
 
 class EngagementsListScreen extends StatelessWidget {
-  const EngagementsListScreen({
-    super.key,
-    required this.store,
-    required this.themeMode,
-  });
-
-  final LocalStore store;
-  final ValueNotifier<ThemeMode> themeMode;
+  const EngagementsListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final items = const ['E-1001', 'E-1002', 'E-1003'];
+    final engagements = const [
+      {
+        'id': 'eng-1001',
+        'client': 'The Goddess Collection',
+        'status': 'In Progress',
+        'years': '2024',
+      },
+      {
+        'id': 'eng-1002',
+        'client': 'DSG Luxury Transportation',
+        'status': 'Planning',
+        'years': '2023–2024',
+      },
+    ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Engagements'),
-        actions: [
-          IconButton(
-            tooltip: 'Toggle theme',
-            icon: Icon(
-              themeMode.value == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
-            ),
-            onPressed: () {
-              themeMode.value =
-                  themeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Engagements')),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
+        itemCount: engagements.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, i) {
-          final id = items[i];
-          return ListTile(
-            title: Text('Engagement $id'),
-            subtitle: const Text('Tap to open details'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).pushNamed('/engagements/$id'),
+          final e = engagements[i];
+          return Card(
+            child: ListTile(
+              title: Text(e['client']!),
+              subtitle: Text('Tax Years: ${e['years']}'),
+              trailing: Text(e['status']!),
+              onTap: () => context.push('/engagements/${e['id']}'),
+            ),
           );
         },
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemCount: items.length,
       ),
     );
   }

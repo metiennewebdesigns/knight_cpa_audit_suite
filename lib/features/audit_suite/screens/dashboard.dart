@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-
-import 'package:knight_cpa_audit_suite/core/storage/local_store.dart';
+import '../../../core/storage/local_store.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({
@@ -15,108 +13,69 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Knight CPA Audit Suite'),
-        actions: [
-          IconButton(
-            tooltip: 'Toggle theme',
-            icon: const Icon(Icons.brightness_6),
-            onPressed: () {
-              themeMode.value =
-                  themeMode.value == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-            },
-          ),
+    // Simple “known good” dashboard so your build never breaks
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text('Overview', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+          SizedBox(height: 12),
+          _KpiRow(),
+          SizedBox(height: 18),
+          Text('Recent Clients', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+          SizedBox(height: 10),
+          Expanded(child: _RecentList()),
         ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Overview', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 16),
-
-            Row(
-              children: [
-                _StatCard(
-                  label: 'Clients',
-                  value: '12',
-                  icon: Icons.people_outline,
-                  onTap: () {},
-                ),
-                const SizedBox(width: 12),
-                _StatCard(
-                  label: 'Engagements',
-                  value: '5',
-                  icon: Icons.assignment_outlined,
-                  onTap: () => context.go('/engagements'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _StatCard(
-              label: 'Workpapers',
-              value: '34',
-              icon: Icons.folder_outlined,
-              onTap: () {},
-            ),
-
-            const SizedBox(height: 24),
-            Text('Recent Clients', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-
-            Expanded(
-              child: ListView(
-                children: const [
-                  _RecentClientTile(name: 'The Goddess Collection', subtitle: 'Kenner, LA • Active'),
-                  _RecentClientTile(name: 'DSG Luxury Transportation', subtitle: 'Dayton, TX • Active'),
-                  _RecentClientTile(name: 'Knight CPA Services', subtitle: 'New Orleans, LA • Onboarding'),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final VoidCallback onTap;
+class _KpiRow extends StatelessWidget {
+  const _KpiRow();
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(icon, size: 32),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: Theme.of(context).textTheme.labelLarge),
-                    Text(value, style: Theme.of(context).textTheme.headlineMedium),
-                  ],
-                ),
-              ],
-            ),
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: const [
+        _KpiCard(title: 'Clients', value: '12', icon: Icons.people_alt_rounded),
+        _KpiCard(title: 'Engagements', value: '5', icon: Icons.assignment_rounded),
+        _KpiCard(title: 'Workpapers', value: '34', icon: Icons.folder_rounded),
+      ],
+    );
+  }
+}
+
+class _KpiCard extends StatelessWidget {
+  const _KpiCard({required this.title, required this.value, required this.icon});
+
+  final String title;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 260,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(icon, size: 30),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ],
           ),
         ),
       ),
@@ -124,23 +83,32 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _RecentClientTile extends StatelessWidget {
-  const _RecentClientTile({
-    required this.name,
-    required this.subtitle,
-  });
-
-  final String name;
-  final String subtitle;
+class _RecentList extends StatelessWidget {
+  const _RecentList();
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-        title: Text(name),
-        subtitle: Text(subtitle),
-        trailing: TextButton(onPressed: () {}, child: const Text('Open')),
+      child: ListView(
+        children: const [
+          ListTile(
+            title: Text('The Goddess Collection'),
+            subtitle: Text('Kenner, LA • Active'),
+            trailing: Text('Open'),
+          ),
+          Divider(height: 1),
+          ListTile(
+            title: Text('DSG Luxury Transportation'),
+            subtitle: Text('Dayton, TX • Active'),
+            trailing: Text('Open'),
+          ),
+          Divider(height: 1),
+          ListTile(
+            title: Text('Knight CPA Services'),
+            subtitle: Text('New Orleans, LA • Onboarding'),
+            trailing: Text('Open'),
+          ),
+        ],
       ),
     );
   }
