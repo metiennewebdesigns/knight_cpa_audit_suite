@@ -34,4 +34,10 @@ android/local.properties
 *.log
 *.swp
 *.class
+*.pyc# =====================
+# Logs / temp
+# =====================
+*.log
+*.swp
+*.class
 *.pyc
