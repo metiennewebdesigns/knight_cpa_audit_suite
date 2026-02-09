@@ -50,20 +50,22 @@ class ExportHistoryVm {
 
 class ExportHistoryReader {
   static Future<ExportHistoryVm> load(LocalStore store, String engagementId) async {
-    final docsPath = (store.documentsPath ?? '').trim();
-    if (!store.canUseFileSystem || docsPath.isEmpty) return ExportHistoryVm.empty;
+    if (!store.canUseFileSystem || (store.documentsPath ?? '').trim().isEmpty) {
+      return ExportHistoryVm.empty;
+    }
 
+    final docsPath = store.documentsPath!.trim();
     final safe = _safeId(engagementId).toLowerCase();
 
     final deliverables = await _countAndLatestInFolder(
       folder: p.join(docsPath, 'Auditron', 'Deliverables'),
-      containsLower: '_$safe_',
+      containsLower: '_${safe}_',
       endsWithLower: '.pdf',
     );
 
     final packets = await _countAndLatestInFolder(
       folder: p.join(docsPath, 'Auditron', 'Packets'),
-      containsLower: '_$safe_',
+      containsLower: '_${safe}_',
       endsWithLower: '.pdf',
     );
 
@@ -107,24 +109,25 @@ class ExportHistoryReader {
       if (!await dir.exists()) return const _CountLatest(count: 0, latestIso: '');
 
       final files = dir
-          .listSync()
+          .listSync(recursive: false, followLinks: false)
           .whereType<File>()
           .map((f) => f.path)
-          .where((fp) {
-            final name = p.basename(fp).toLowerCase();
-            return name.contains(containsLower) && name.endsWith(endsWithLower);
-          })
           .toList();
 
-      if (files.isEmpty) return const _CountLatest(count: 0, latestIso: '');
+      final matches = files.where((fp) {
+        final name = p.basename(fp).toLowerCase();
+        return name.contains(containsLower) && name.endsWith(endsWithLower);
+      }).toList();
+
+      if (matches.isEmpty) return const _CountLatest(count: 0, latestIso: '');
 
       String latestIso = '';
-      for (final fp in files) {
+      for (final fp in matches) {
         final iso = await _modifiedIso(fp);
         if (iso.compareTo(latestIso) > 0) latestIso = iso;
       }
 
-      return _CountLatest(count: files.length, latestIso: latestIso);
+      return _CountLatest(count: matches.length, latestIso: latestIso);
     } catch (_) {
       return const _CountLatest(count: 0, latestIso: '');
     }
@@ -132,7 +135,7 @@ class ExportHistoryReader {
 
   static Future<String> _modifiedIso(String filePath) async {
     try {
-      final stat = await File(filePath).stat();
+      final stat = await FileStat.stat(filePath);
       return stat.modified.toIso8601String();
     } catch (_) {
       return '';
@@ -153,7 +156,6 @@ class ExportHistoryReader {
 
       int count = 0;
       String latest = '';
-
       for (final e in exports) {
         if (e is! Map) continue;
         count++;
