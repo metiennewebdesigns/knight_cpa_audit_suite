@@ -1,0 +1,54 @@
+name: Build Auditron Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Enable Windows
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows (Release)
+        run: flutter build windows --release
+
+      - name: Zip Windows build
+        run: |
+          powershell Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Auditron_Windows_Release.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Auditron_Windows_Release
+          path: Auditron_Windows_Release.zip
+
+  build_web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build Web (Release)
+        run: flutter build web --release
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Auditron_Web_Build
+          path: build/web

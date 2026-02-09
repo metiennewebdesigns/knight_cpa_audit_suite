@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../core/storage/local_store.dart';
 
 class ReportsScreen extends StatelessWidget {
@@ -13,30 +14,33 @@ class ReportsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reports = const [
-      ('Audit Summary', 'Last updated: Today'),
-      ('Engagement Status', 'Last updated: Yesterday'),
-      ('Workpaper Progress', 'Last updated: 2 days ago'),
-    ];
-
     return Scaffold(
       appBar: AppBar(title: const Text('Reports')),
-      body: ListView.separated(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: reports.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, i) {
-          final (title, subtitle) = reports[i];
-          return ListTile(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            tileColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-            leading: const Icon(Icons.insert_chart_outlined),
-            title: Text(title),
-            subtitle: Text(subtitle),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {},
-          );
-        },
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Phase 1: Placeholder',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    'In Phase 2 we’ll add:\n'
+                    '• Letter generation\n'
+                    '• Export PDFs\n'
+                    '• Audit summaries\n'
+                    '• Workpaper packs',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,0 +1,1 @@
+export 'doc_path_stub.dart' if (dart.library.io) 'doc_path_io.dart';

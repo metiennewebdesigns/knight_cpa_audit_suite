@@ -1,0 +1,67 @@
+{
+  "clients": [
+    {
+      "id": "the-goddess-collection",
+      "name": "The Goddess Collection",
+      "location": "Kenner, LA",
+      "status": "Active",
+      "updated": "2026-01-21"
+    },
+    {
+      "id": "dsg-luxury-transportation",
+      "name": "DSG Luxury Transportation",
+      "location": "Dayton, TX",
+      "status": "Active",
+      "updated": "2026-01-20"
+    },
+    {
+      "id": "knight-cpa-services",
+      "name": "Knight CPA Services",
+      "location": "Kenner, LA",
+      "status": "Active",
+      "updated": "2026-01-19"
+    }
+  ],
+  "engagements": [
+    {
+      "id": "eng-001",
+      "clientId": "the-goddess-collection",
+      "title": "2025 Financial Statement Audit",
+      "status": "Active",
+      "updated": "2026-01-21"
+    },
+    {
+      "id": "eng-002",
+      "clientId": "dsg-luxury-transportation",
+      "title": "2025 Year-End Review",
+      "status": "Active",
+      "updated": "2026-01-20"
+    }
+  ],
+  "workpapers": [
+    {
+      "id": "wp-001",
+      "engagementId": "eng-001",
+      "title": "Bank Reconciliation Support",
+      "status": "Open",
+      "updated": "2026-01-21",
+      "type": "xlsx"
+    },
+    {
+      "id": "wp-002",
+      "engagementId": "eng-001",
+      "title": "Revenue Testing Schedule",
+      "status": "In Progress",
+      "updated": "2026-01-21",
+      "type": "pdf"
+    },
+    {
+      "id": "wp-003",
+      "engagementId": "eng-002",
+      "title": "AR Aging Review",
+      "status": "Complete",
+      "updated": "2026-01-20",
+      "type": "docx"
+    }
+  ]
+}
