@@ -1,7 +1,3 @@
-// lib/features/audit_suite/services/evidence_integrity_certificate_exporter_stub.dart
-//
-// Web implementation: exporting to local Documents is disabled.
-
 class EvidenceIntegrityCertificateResult {
   final String savedPath;
   final String savedFileName;
@@ -15,14 +11,15 @@ class EvidenceIntegrityCertificateResult {
 }
 
 class EvidenceIntegrityCertificateExporter {
-  static const String certificateVersion = '1.0';
-
   static Future<EvidenceIntegrityCertificateResult> exportPdf({
     required String engagementId,
     required String engagementTitle,
     required String clientName,
     String engagementStatus = '',
+    String clientTaxId = '',
+    String clientEmail = '',
+    String clientPhone = '',
   }) async {
-    throw UnsupportedError('Evidence Integrity Certificate export is disabled on web demo.');
+    throw UnsupportedError('Evidence Integrity Certificate export is not supported in the web demo.');
   }
 }

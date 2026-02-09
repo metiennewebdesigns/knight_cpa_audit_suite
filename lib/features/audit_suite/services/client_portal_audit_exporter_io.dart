@@ -1,15 +1,13 @@
-// lib/features/audit_suite/services/client_portal_audit_exporter_io.dart
-
 import 'dart:convert';
-import 'dart:io' show Directory, File;
+import 'dart:io';
 
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../../core/storage/local_store.dart';
-import '../../../core/utils/doc_path.dart';
 
 import '../data/models/repositories/clients_repository.dart';
 import '../data/models/repositories/engagements_repository.dart';
@@ -37,10 +35,7 @@ class ClientPortalAuditExporter {
     required LocalStore store,
     required String engagementId,
   }) async {
-    final docsPath = await getDocumentsPath();
-    if (docsPath == null || docsPath.isEmpty) {
-      throw StateError('Documents directory not available.');
-    }
+    final docs = await getApplicationDocumentsDirectory();
 
     // Engagement + client
     final engRepo = EngagementsRepository(store);
@@ -55,6 +50,11 @@ class ClientPortalAuditExporter {
     final clientName = (client?.name ?? eng.clientId).toString();
     final clientAddr = ClientMeta.formatSingleLine(await ClientMeta.readAddress(eng.clientId));
 
+    // ✅ NEW: contact fields
+    final clientTaxId = (client?.taxId ?? '').toString().trim();
+    final clientEmail = (client?.email ?? '').toString().trim();
+    final clientPhone = (client?.phone ?? '').toString().trim();
+
     // Preparer
     final preparer = await PreparerProfile.read();
     final preparerName = (preparer['name'] ?? 'Independent Auditor').toString().trim();
@@ -68,7 +68,7 @@ class ClientPortalAuditExporter {
         .trim();
 
     // Portal log events
-    final events = await _readPortalLogEvents(docsPath, engagementId);
+    final events = await _readPortalLogEvents(docs.path, engagementId);
 
     // Ledger for integrity lookup
     final ledgerEntries = await EvidenceLedger.readAll(engagementId);
@@ -125,7 +125,6 @@ class ClientPortalAuditExporter {
       );
     }
 
-    // newest first
     rows.sort((a, b) => b.whenIso.compareTo(a.whenIso));
 
     final generatedOn = _todayIso();
@@ -139,7 +138,6 @@ class ClientPortalAuditExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.letter,
         margin: const pw.EdgeInsets.fromLTRB(50, 56, 50, 56),
-
         header: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -153,16 +151,21 @@ class ClientPortalAuditExporter {
             if (preparerLine2.isNotEmpty)
               pw.Align(
                 alignment: pw.Alignment.centerRight,
-                child: pw.Text(preparerLine2, style: const pw.TextStyle(fontSize: 9)),
+                child: pw.Text(preparerLine2, style: const pw.TextStyle(fontSize: 9), maxLines: 1),
               ),
             pw.SizedBox(height: 4),
-            pw.Text('Client: $clientName', style: const pw.TextStyle(fontSize: 9)),
+
+            // ✅ Client block + contact info
+            pw.Text('Client: $clientName', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+            if (clientTaxId.isNotEmpty) pw.Text('Tax ID: $clientTaxId', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+            if (clientEmail.isNotEmpty) pw.Text('Email: $clientEmail', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+            if (clientPhone.isNotEmpty) pw.Text('Phone: $clientPhone', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+
             if (clientAddr.trim().isNotEmpty)
-              pw.Text('Client Address: $clientAddr', style: const pw.TextStyle(fontSize: 9)),
+              pw.Text('Client Address: $clientAddr', style: const pw.TextStyle(fontSize: 9), maxLines: 2, overflow: pw.TextOverflow.clip),
             pw.SizedBox(height: 6),
           ],
         ),
-
         footer: (context) => pw.Container(
           padding: const pw.EdgeInsets.only(top: 10),
           child: pw.Row(
@@ -179,22 +182,13 @@ class ClientPortalAuditExporter {
             ],
           ),
         ),
-
         build: (_) => [
-          pw.Text(
-            'Client Portal Audit Trail',
-            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
-          ),
+          pw.Text('Client Portal Audit Trail', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 10),
-
           pw.Text('Engagement: ${eng.title}', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Engagement ID: $engagementId', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Engagement Status: ${eng.status}', style: const pw.TextStyle(fontSize: 11)),
-          pw.Text(
-            isFinalized ? 'Trail Status: LOCKED (Finalized)' : 'Trail Status: ACTIVE',
-            style: const pw.TextStyle(fontSize: 11),
-          ),
-
+          pw.Text(isFinalized ? 'Trail Status: LOCKED (Finalized)' : 'Trail Status: ACTIVE', style: const pw.TextStyle(fontSize: 11)),
           pw.SizedBox(height: 14),
 
           pw.Container(
@@ -216,7 +210,6 @@ class ClientPortalAuditExporter {
           ),
 
           pw.SizedBox(height: 14),
-
           pw.Text('Audit Log', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 8),
 
@@ -241,7 +234,6 @@ class ClientPortalAuditExporter {
           pw.NewPage(),
           pw.Text('Auditor Attestation', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 12),
-
           pw.Text('Client: $clientName', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Engagement: ${eng.title}', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Engagement ID: $engagementId', style: const pw.TextStyle(fontSize: 11)),
@@ -258,8 +250,7 @@ class ClientPortalAuditExporter {
 
           pw.SizedBox(height: 18),
           pw.Text('Prepared By: $preparerName', style: const pw.TextStyle(fontSize: 11)),
-          if (preparerLine2.isNotEmpty)
-            pw.Text('Title: $preparerLine2', style: const pw.TextStyle(fontSize: 11)),
+          if (preparerLine2.isNotEmpty) pw.Text('Title: $preparerLine2', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Organization: ${preparerOrg.isEmpty ? '—' : preparerOrg}', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Prepared With: Auditron', style: const pw.TextStyle(fontSize: 11)),
           pw.SizedBox(height: 18),
@@ -275,10 +266,8 @@ class ClientPortalAuditExporter {
 
     final bytes = await doc.save();
 
-    final outFolder = Directory(p.join(docsPath, 'Auditron', 'AuditTrail'));
-    if (!await outFolder.exists()) {
-      await outFolder.create(recursive: true);
-    }
+    final outFolder = Directory(p.join(docs.path, 'Auditron', 'AuditTrail'));
+    if (!await outFolder.exists()) await outFolder.create(recursive: true);
 
     final safeEngagementId = engagementId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
     final fileName = 'Auditron_ClientPortal_AuditTrail_${safeEngagementId}_${_todayIso()}.pdf';
@@ -292,11 +281,7 @@ class ClientPortalAuditExporter {
       opened = (res.type == ResultType.done);
     } catch (_) {}
 
-    return ClientPortalAuditExportResult(
-      savedPath: outPath,
-      savedFileName: fileName,
-      didOpenFile: opened,
-    );
+    return ClientPortalAuditExportResult(savedPath: outPath, savedFileName: fileName, didOpenFile: opened);
   }
 
   static Future<List<Map<String, dynamic>>> _readPortalLogEvents(String docsPath, String engagementId) async {
@@ -355,10 +340,7 @@ class ClientPortalAuditExporter {
         children: [
           pw.Expanded(flex: 2, child: pw.Text(_dateTimeShort(r.whenIso), style: const pw.TextStyle(fontSize: 9))),
           pw.Expanded(flex: 3, child: pw.Text(r.fileName, style: const pw.TextStyle(fontSize: 9))),
-          pw.Expanded(
-            flex: 3,
-            child: pw.Text(r.pbcItemTitle.isEmpty ? '—' : r.pbcItemTitle, style: const pw.TextStyle(fontSize: 9)),
-          ),
+          pw.Expanded(flex: 3, child: pw.Text(r.pbcItemTitle.isEmpty ? '—' : r.pbcItemTitle, style: const pw.TextStyle(fontSize: 9))),
           pw.Expanded(flex: 2, child: pw.Text(shaShort, style: const pw.TextStyle(fontSize: 9))),
           pw.Expanded(flex: 2, child: pw.Text(r.integrity, style: const pw.TextStyle(fontSize: 9))),
         ],

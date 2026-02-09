@@ -17,6 +17,12 @@ import '../data/models/repositories/clients_repository.dart';
 import '../data/models/repositories/engagements_repository.dart';
 import '../data/models/repositories/workpapers_repository.dart';
 import '../data/models/repositories/risk_assessments_repository.dart';
+import '../data/models/repositories/discrepancies_repository.dart';
+
+import '../services/ai_priority.dart';
+import '../services/ai_priority_history.dart';
+import '../services/export_history.dart';
+import '../services/ai_copilot_local.dart';
 
 import '../services/deliverable_pack_exporter.dart';
 import '../services/evidence_ledger.dart';
@@ -24,11 +30,11 @@ import '../services/letter_exporter.dart';
 import '../services/evidence_integrity_certificate_exporter.dart';
 import '../services/client_portal_audit_exporter.dart';
 
-// ✅ NEW: web-safe file helpers (you must add these 3 files; I include them below)
 import '../services/engagement_detail_fs.dart';
 
 import '../widgets/evidence_ledger_card.dart';
 import '../widgets/audit_timeline_card.dart';
+import '../widgets/ai_copilot_card.dart';
 
 class EngagementDetailScreen extends StatefulWidget {
   const EngagementDetailScreen({
@@ -51,6 +57,7 @@ class _EngagementDetailScreenState extends State<EngagementDetailScreen> {
   late final ClientsRepository _clientsRepo;
   late final WorkpapersRepository _wpRepo;
   late final RiskAssessmentsRepository _riskRepo;
+  late final DiscrepanciesRepository _discRepo;
 
   late Future<_Vm> _future;
   bool _busy = false;
@@ -68,12 +75,101 @@ class _EngagementDetailScreenState extends State<EngagementDetailScreen> {
     _clientsRepo = ClientsRepository(widget.store);
     _wpRepo = WorkpapersRepository(widget.store);
     _riskRepo = RiskAssessmentsRepository(widget.store);
+    _discRepo = DiscrepanciesRepository(widget.store);
+
     _future = _load();
   }
 
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  String _prettyIsoShort(String iso) {
+    final s = iso.trim();
+    if (s.isEmpty) return '—';
+    final dt = DateTime.tryParse(s);
+    if (dt == null) return s;
+    final mm = dt.month.toString().padLeft(2, '0');
+    final dd = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mi = dt.minute.toString().padLeft(2, '0');
+    return '${dt.year}-$mm-$dd $hh:$mi';
+    }
+
+  /* ======================= AI Priority (save or preview) ======================= */
+
+  AiPriorityResult _computeAiPreview(_Vm vm) {
+    if (vm.engagement.hasAiPriority) {
+      return AiPriorityResult(
+        label: vm.engagement.aiPriorityLabel.isEmpty ? 'Medium' : vm.engagement.aiPriorityLabel,
+        score: vm.engagement.aiPriorityScore,
+        reason: vm.engagement.aiPriorityReason.isEmpty ? '—' : vm.engagement.aiPriorityReason,
+      );
+    }
+
+    return AiPriorityScorer.score(
+      engagement: vm.engagement,
+      risk: vm.risk,
+      pbcOverdueCount: vm.pbcOverdueCount,
+      integrityIssues: vm.integrityIssues,
+      openWorkpapers: vm.openWorkpapers,
+      totalWorkpapers: vm.totalWorkpapers,
+      discrepancyOpenCount: vm.discrepancyOpenCount,
+      discrepancyOpenTotal: vm.discrepancyOpenTotal,
+    );
+  }
+
+  Future<void> _refreshAiPriority(_Vm vm) async {
+    if (_busy) return;
+
+    setState(() => _busy = true);
+    try {
+      final ai = AiPriorityScorer.score(
+        engagement: vm.engagement,
+        risk: vm.risk,
+        pbcOverdueCount: vm.pbcOverdueCount,
+        integrityIssues: vm.integrityIssues,
+        openWorkpapers: vm.openWorkpapers,
+        totalWorkpapers: vm.totalWorkpapers,
+        discrepancyOpenCount: vm.discrepancyOpenCount,
+        discrepancyOpenTotal: vm.discrepancyOpenTotal,
+      );
+
+      final updatedEng = vm.engagement.copyWith(
+        aiPriorityLabel: ai.label,
+        aiPriorityScore: ai.score,
+        aiPriorityReason: ai.reason,
+        aiPriorityUpdatedAt: DateTime.now().toIso8601String(),
+      );
+
+      try {
+        await _engRepo.upsert(updatedEng);
+
+        // history only if saved
+        await AiPriorityHistoryStore.append(
+          widget.store,
+          engagementId: widget.engagementId,
+          label: ai.label,
+          score: ai.score,
+          reason: ai.reason,
+        );
+
+        _snack('AI Priority saved ✅ (${ai.label} ${ai.score})');
+        await _refresh();
+      } catch (e) {
+        final msg = e.toString().toLowerCase();
+        if (msg.contains('permission denied') || msg.contains('client users cannot')) {
+          _snack('AI Priority preview: ${ai.label} (${ai.score}) • ${ai.reason}');
+        } else {
+          _snack('AI Priority failed: $e');
+        }
+      }
+    } catch (e) {
+      _snack('AI Priority failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   /* ======================= Meta + PIN ======================= */
@@ -98,9 +194,7 @@ class _EngagementDetailScreenState extends State<EngagementDetailScreen> {
   }
 
   Future<String> _ensurePin() async {
-    if (!_canFile) {
-      throw UnsupportedError('Client Portal PIN is disabled on web demo.');
-    }
+    if (!_canFile) throw UnsupportedError('Not supported in web demo');
 
     await ensureDir(_metaDirPath());
 
@@ -109,9 +203,7 @@ class _EngagementDetailScreenState extends State<EngagementDetailScreen> {
 
     if (await fileExists(fp)) {
       final raw = await readTextFile(fp);
-      if (raw.trim().isNotEmpty) {
-        data = jsonDecode(raw) as Map<String, dynamic>;
-      }
+      if (raw.trim().isNotEmpty) data = jsonDecode(raw) as Map<String, dynamic>;
     }
 
     final existing = (data['clientPortalPin'] ?? '').toString().trim();
@@ -120,8 +212,8 @@ class _EngagementDetailScreenState extends State<EngagementDetailScreen> {
     final pin = _genPin6();
     data['clientPortalPin'] = pin;
     data['clientPortalPinCreatedAt'] = DateTime.now().toIso8601String();
-
     await writeTextFile(fp, jsonEncode(data));
+
     return pin;
   }
 
@@ -210,11 +302,54 @@ $deepLink
     }
   }
 
-  /* ======================= Certificate export ======================= */
+  /* ======================= Exports ======================= */
+
+  Future<void> _exportDeliverablePack() async {
+    if (_busy) return;
+    if (kIsWeb) {
+      _snack('Deliverable pack export is disabled on web demo.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final res = await DeliverablePackExporter.exportPdf(
+        store: widget.store,
+        engagementId: widget.engagementId,
+      );
+      _snack('Saved: ${res.savedFileName} ✅');
+      await _refresh();
+    } catch (e) {
+      _snack('Deliverable pack failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _exportClientPortalAuditTrail() async {
+    if (_busy) return;
+    if (kIsWeb) {
+      _snack('Audit trail export is disabled on web demo.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final res = await ClientPortalAuditExporter.exportPdf(
+        store: widget.store,
+        engagementId: widget.engagementId,
+      );
+      _snack('Audit trail exported ✅ (${res.savedFileName})');
+      await _refresh();
+    } catch (e) {
+      _snack('Audit trail export failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _exportIntegrityCertificate(_Vm vm) async {
     if (_busy) return;
-
     if (kIsWeb) {
       _snack('Certificate export is disabled on web demo.');
       return;
@@ -228,6 +363,7 @@ $deepLink
         clientName: vm.clientName,
       );
       _snack('Certificate exported ✅ (${res.savedFileName})');
+      await _refresh();
     } catch (e) {
       _snack('Certificate export failed: $e');
     } finally {
@@ -235,7 +371,8 @@ $deepLink
     }
   }
 
-  /* ======================= PBC reading ======================= */
+  // STOP HERE — PART 2 continues with _load(), build(), and widget classes
+    /* ======================= PBC reading ======================= */
 
   Future<_PbcCounts> _readPbcCounts(String docsPath, String engagementId) async {
     if (!_canFile) return const _PbcCounts();
@@ -257,6 +394,7 @@ $deepLink
         if (s == 'received') received++;
         if (s == 'reviewed') reviewed++;
       }
+
       return _PbcCounts(requested: requested, received: received, reviewed: reviewed);
     } catch (_) {
       return const _PbcCounts();
@@ -278,6 +416,7 @@ $deepLink
       int overdue = 0;
       for (final it in items) {
         if (it is! Map) continue;
+
         final status = (it['status'] ?? '').toString().toLowerCase();
         if (status != 'requested') continue;
 
@@ -293,7 +432,12 @@ $deepLink
     }
   }
 
-  Future<int> _integrityIssuesForEngagement({required String engagementId, int maxEntriesToCheck = 10}) async {
+  /* ======================= Integrity quick check ======================= */
+
+  Future<int> _integrityIssuesForEngagement({
+    required String engagementId,
+    int maxEntriesToCheck = 10,
+  }) async {
     if (kIsWeb) return 0;
     try {
       final entries = await EvidenceLedger.readAll(engagementId);
@@ -315,7 +459,9 @@ $deepLink
 
   Future<_Vm> _load() async {
     final eng = await _engRepo.getById(widget.engagementId);
-    if (eng == null) throw StateError('Engagement not found: ${widget.engagementId}');
+    if (eng == null) {
+      throw StateError('Engagement not found: ${widget.engagementId}');
+    }
 
     final client = await _clientsRepo.getById(eng.clientId);
     final clientName = client?.name ?? eng.clientId;
@@ -323,7 +469,13 @@ $deepLink
     final risk = await _riskRepo.ensureForEngagement(eng.id);
     final workpapers = await _wpRepo.getByEngagementId(eng.id);
 
-    // Letters/PBC are file-backed today -> disable on web by returning 0
+    final pbcCounts = await _readPbcCounts(_docsPath, eng.id);
+    final pbcOverdue = await _readPbcOverdueCount(_docsPath, eng.id);
+
+    final totalWps = workpapers.length;
+    final completeWps = workpapers.where((w) => w.status.trim().toLowerCase() == 'complete').length;
+    final openWps = (totalWps - completeWps).clamp(0, 999999);
+
     final lettersGenerated = (!_canFile)
         ? 0
         : await LetterExporter.getLettersGeneratedCount(
@@ -331,12 +483,9 @@ $deepLink
             engagementId: eng.id,
           );
 
-    final pbcCounts = (!_canFile) ? const _PbcCounts() : await _readPbcCounts(_docsPath, eng.id);
-    final pbcOverdue = (!_canFile) ? 0 : await _readPbcOverdueCount(_docsPath, eng.id);
+    final integrityIssues = await _integrityIssuesForEngagement(engagementId: eng.id);
 
-    final totalWps = workpapers.length;
-    final completeWps = workpapers.where((w) => w.status.trim().toLowerCase() == 'complete').length;
-    final openWps = (totalWps - completeWps).clamp(0, 999999);
+    final disc = await _discRepo.summary(widget.engagementId);
 
     final readinessPct = _computeReadinessPercentV2(
       riskCompleted: risk.updated.trim().isNotEmpty,
@@ -347,7 +496,6 @@ $deepLink
       lettersGenerated: lettersGenerated,
     );
 
-    final integrityIssues = await _integrityIssuesForEngagement(engagementId: eng.id);
     final health = _computeHealth(
       engagementStatus: eng.status,
       riskLevel: risk.overallLevel(),
@@ -356,13 +504,15 @@ $deepLink
 
     final pin = await _readPinOrEmpty();
 
+    final exports = await ExportHistoryReader.load(widget.store, widget.engagementId);
+    final aiHistory = await AiPriorityHistoryStore.read(widget.store, widget.engagementId);
+
     return _Vm(
       engagement: eng,
       clientName: clientName,
       risk: risk,
       workpapers: workpapers,
       lettersGenerated: lettersGenerated,
-      planningCompleted: false,
       pbcRequested: pbcCounts.requested,
       pbcReceived: pbcCounts.received,
       pbcReviewed: pbcCounts.reviewed,
@@ -375,6 +525,10 @@ $deepLink
       healthTone: health.tone,
       clientPortalPin: pin,
       canUseFileSystem: _canFile,
+      exportHistory: exports,
+      aiPriorityHistory: aiHistory,
+      discrepancyOpenCount: disc.openCount,
+      discrepancyOpenTotal: disc.openTotal,
     );
   }
 
@@ -393,58 +547,18 @@ $deepLink
     }
   }
 
+  /* ======================= Navigation ======================= */
+
   void _openClientPortal() => context.pushNamed('clientPortal', pathParameters: {'id': widget.engagementId});
   void _openPbc() => context.pushNamed('pbcList', pathParameters: {'id': widget.engagementId});
   void _openLetters() => context.pushNamed('lettersHub', pathParameters: {'id': widget.engagementId});
   void _openPlanning() => context.pushNamed('engagementPlanning', pathParameters: {'id': widget.engagementId});
   void _openPacket() => context.pushNamed('engagementPacket', pathParameters: {'id': widget.engagementId});
-
-  Future<void> _exportDeliverablePack() async {
-    if (_busy) return;
-
-    if (kIsWeb) {
-      _snack('Deliverable pack export is disabled on web demo.');
-      return;
-    }
-
-    setState(() => _busy = true);
-    try {
-      final res = await DeliverablePackExporter.exportPdf(
-        store: widget.store,
-        engagementId: widget.engagementId,
-      );
-      _snack('Saved: ${res.savedFileName} ✅');
-    } catch (e) {
-      _snack('Deliverable pack failed: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _exportClientPortalAuditTrail() async {
-    if (_busy) return;
-
-    if (kIsWeb) {
-      _snack('Audit trail export is disabled on web demo.');
-      return;
-    }
-
-    setState(() => _busy = true);
-    try {
-      final res = await ClientPortalAuditExporter.exportPdf(
-        store: widget.store,
-        engagementId: widget.engagementId,
-      );
-      _snack('Audit trail exported ✅ (${res.savedFileName})');
-    } catch (e) {
-      _snack('Audit trail export failed: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+  void _openDiscrepancies() => context.pushNamed('engagementDiscrepancies', pathParameters: {'id': widget.engagementId});
 
   Future<void> _addWorkpaper() async {
     if (_busy) return;
+
     final created = await showDialog<WorkpaperModel>(
       context: context,
       barrierDismissible: false,
@@ -463,10 +577,18 @@ $deepLink
     }
   }
 
+  Widget? _lettersGeneratedPill(_Vm vm, ColorScheme cs) {
+    if (vm.lettersGenerated <= 0) return null;
+    return _Pill(
+      text: '${vm.lettersGenerated} generated',
+      bg: cs.secondaryContainer,
+      border: cs.secondary.withOpacity(0.35),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final surfaceCard = cs.surfaceVariant;
 
     return WillPopScope(
       onWillPop: () async {
@@ -496,17 +618,15 @@ $deepLink
 
           void finalizedMsg() => _snack('Engagement is finalized — portal is closed.');
 
-          final overdueBadge = vm.pbcOverdueCount > 0
-              ? _Pill(text: 'Overdue ${vm.pbcOverdueCount}', bg: cs.errorContainer, border: cs.error.withOpacity(0.40))
-              : null;
-
           final pinStatusPill = vm.clientPortalPin.trim().isNotEmpty
               ? _Pill(text: 'PIN ACTIVE', bg: cs.secondaryContainer, border: cs.secondary.withOpacity(0.35))
-              : _Pill(text: 'PIN NOT SET', bg: surfaceCard, border: cs.onSurface.withOpacity(0.12));
+              : _Pill(text: 'PIN NOT SET', bg: cs.surfaceVariant, border: cs.onSurface.withOpacity(0.12));
 
           final portalClosedPill = isFinalized
-              ? _Pill(text: 'PORTAL CLOSED', bg: surfaceCard, border: cs.onSurface.withOpacity(0.12))
+              ? _Pill(text: 'PORTAL CLOSED', bg: cs.surfaceVariant, border: cs.onSurface.withOpacity(0.12))
               : null;
+
+          final portalLink = '/engagements/${widget.engagementId}/client-portal?pin=${vm.clientPortalPin}';
 
           return Scaffold(
             appBar: AppBar(
@@ -534,7 +654,7 @@ $deepLink
               children: [
                 if (!vm.canUseFileSystem)
                   Card(
-                    color: surfaceCard,
+                    color: cs.surfaceVariant,
                     child: const ListTile(
                       leading: Icon(Icons.public),
                       title: Text('Web demo mode'),
@@ -550,12 +670,290 @@ $deepLink
                   trailing: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      _Pill(text: vm.engagement.status, bg: cs.primary.withOpacity(0.14), border: cs.primary.withOpacity(0.35)),
+                      _Pill(
+                        text: vm.engagement.status,
+                        bg: cs.primary.withOpacity(0.14),
+                        border: cs.primary.withOpacity(0.35),
+                      ),
                       const SizedBox(height: 8),
                       _Pill(text: 'Health: ${vm.healthLabel}', bg: hc.bg, border: hc.border),
                       const SizedBox(height: 8),
-                      _Pill(text: 'Ready: ${vm.readinessPct}%', bg: cs.secondaryContainer, border: cs.secondary.withOpacity(0.35)),
+                      _Pill(
+                        text: 'Ready: ${vm.readinessPct}%',
+                        bg: cs.secondaryContainer,
+                        border: cs.secondary.withOpacity(0.35),
+                      ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Export History
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Export History',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            _Pill(
+                              text: 'Deliverables: ${vm.exportHistory.deliverablePackCount}',
+                              bg: cs.surfaceVariant,
+                              border: cs.onSurface.withOpacity(0.10),
+                            ),
+                            _Pill(
+                              text: 'Packets: ${vm.exportHistory.auditPacketCount}',
+                              bg: cs.surfaceVariant,
+                              border: cs.onSurface.withOpacity(0.10),
+                            ),
+                            _Pill(
+                              text: 'Certificates: ${vm.exportHistory.integrityCertCount}',
+                              bg: cs.surfaceVariant,
+                              border: cs.onSurface.withOpacity(0.10),
+                            ),
+                            _Pill(
+                              text: 'Portal Trails: ${vm.exportHistory.portalAuditCount}',
+                              bg: cs.surfaceVariant,
+                              border: cs.onSurface.withOpacity(0.10),
+                            ),
+                            _Pill(
+                              text: 'Letters: ${vm.exportHistory.lettersCount}',
+                              bg: cs.surfaceVariant,
+                              border: cs.onSurface.withOpacity(0.10),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Last deliverable: ${_prettyIsoShort(vm.exportHistory.deliverableLastIso)}\n'
+                          'Last packet: ${_prettyIsoShort(vm.exportHistory.packetLastIso)}\n'
+                          'Last certificate: ${_prettyIsoShort(vm.exportHistory.certLastIso)}\n'
+                          'Last portal trail: ${_prettyIsoShort(vm.exportHistory.portalAuditLastIso)}\n'
+                          'Last letter: ${_prettyIsoShort(vm.exportHistory.lettersLastIso)}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: cs.onSurface.withOpacity(0.70),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // AI Priority Card
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    child: Builder(
+                      builder: (context) {
+                        final ai = _computeAiPreview(vm);
+
+                        Color bg = cs.surfaceContainerHighest;
+                        Color border = cs.onSurface.withOpacity(0.12);
+
+                        switch (ai.label.toLowerCase()) {
+                          case 'critical':
+                            bg = cs.errorContainer;
+                            border = cs.error.withOpacity(0.35);
+                            break;
+                          case 'high':
+                            bg = cs.tertiaryContainer;
+                            border = cs.tertiary.withOpacity(0.35);
+                            break;
+                          case 'medium':
+                            bg = cs.surfaceContainerHighest;
+                            border = cs.onSurface.withOpacity(0.12);
+                            break;
+                          case 'low':
+                          default:
+                            bg = cs.secondaryContainer;
+                            border = cs.secondary.withOpacity(0.35);
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'AI Priority',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.2,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                _Pill(
+                                  text: '${ai.label.toUpperCase()} (${ai.score})',
+                                  bg: bg,
+                                  border: border,
+                                ),
+                                if (vm.engagement.aiPriorityUpdatedAt.trim().isNotEmpty)
+                                  _Pill(
+                                    text: 'Saved',
+                                    bg: cs.surfaceVariant,
+                                    border: cs.onSurface.withOpacity(0.10),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              ai.reason.isEmpty ? '—' : ai.reason,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: cs.onSurface.withOpacity(0.70),
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              onPressed: _busy ? null : () => _refreshAiPriority(vm),
+                              icon: const Icon(Icons.auto_awesome),
+                              label: Text(vm.engagement.hasAiPriority ? 'Refresh AI Priority' : 'Generate AI Priority'),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // AI Priority History
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    child: ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(top: 10),
+                      title: Text(
+                        'AI Priority History (${vm.aiPriorityHistory.length})',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.2,
+                            ),
+                      ),
+                      subtitle: Text(
+                        vm.aiPriorityHistory.isEmpty ? 'No saved history yet.' : 'Newest first (last 30).',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: cs.onSurface.withOpacity(0.70),
+                            ),
+                      ),
+                      children: [
+                        if (vm.aiPriorityHistory.isEmpty)
+                          Text(
+                            'Generate & Save AI Priority to start a history trail.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          )
+                        else
+                          ...vm.aiPriorityHistory.map(
+                            (h) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: cs.onSurface.withOpacity(0.10)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${h.label} (${h.score}) • ${_prettyIsoShort(h.atIso)}',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w900),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      h.reason.isEmpty ? '—' : h.reason,
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            color: cs.onSurface.withOpacity(0.70),
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // AI Copilot (Local)
+                AiCopilotCard(
+                  onSummarize: () => AiCopilotLocal.summarize(
+                    engagement: vm.engagement,
+                    clientName: vm.clientName,
+                    risk: vm.risk,
+                    openWorkpapers: vm.openWorkpapers,
+                    totalWorkpapers: vm.totalWorkpapers,
+                    pbcOverdueCount: vm.pbcOverdueCount,
+                    discrepancyOpenCount: vm.discrepancyOpenCount,
+                    discrepancyOpenTotal: vm.discrepancyOpenTotal,
+                    integrityIssues: vm.integrityIssues,
+                    readinessPct: vm.readinessPct,
+                  ),
+                  onNextActions: () => AiCopilotLocal.nextActions(
+                    risk: vm.risk,
+                    openWorkpapers: vm.openWorkpapers,
+                    pbcOverdueCount: vm.pbcOverdueCount,
+                    discrepancyOpenCount: vm.discrepancyOpenCount,
+                    integrityIssues: vm.integrityIssues,
+                  ),
+                  onDraftPbcEmail: () => AiCopilotLocal.draftPbcEmail(
+                    engagementId: widget.engagementId,
+                    clientName: vm.clientName,
+                    overdueCount: vm.pbcOverdueCount,
+                    portalLink: portalLink,
+                    pin: vm.clientPortalPin,
+                  ),
+                  onExplainPriority: () => AiCopilotLocal.explainAiPriority(
+                    label: vm.engagement.aiPriorityLabel.isEmpty ? 'Medium' : vm.engagement.aiPriorityLabel,
+                    score: vm.engagement.aiPriorityScore,
+                    reason: vm.engagement.aiPriorityReason.isEmpty ? '—' : vm.engagement.aiPriorityReason,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Total Discrepancy quick view + button
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _Pill(
+                          text: '${vm.discrepancyOpenCount} open',
+                          bg: cs.surfaceVariant,
+                          border: cs.onSurface.withOpacity(0.10),
+                        ),
+                        _Pill(
+                          text: '\$${vm.discrepancyOpenTotal.toStringAsFixed(2)} total',
+                          bg: cs.surfaceVariant,
+                          border: cs.onSurface.withOpacity(0.10),
+                        ),
+                        FilledButton.icon(
+                          onPressed: _openDiscrepancies,
+                          icon: const Icon(Icons.rule_folder_outlined),
+                          label: const Text('Discrepancies'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -598,7 +996,10 @@ $deepLink
                 ),
                 const SizedBox(height: 12),
 
-                Container(key: _ledgerKey, child: EvidenceLedgerCard(engagementId: widget.engagementId)),
+                Container(
+                  key: _ledgerKey,
+                  child: EvidenceLedgerCard(engagementId: widget.engagementId),
+                ),
                 const SizedBox(height: 14),
 
                 FutureBuilder<List<Map<String, dynamic>>>(
@@ -612,8 +1013,13 @@ $deepLink
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Client Portal Activity',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.2)),
+                            Text(
+                              'Client Portal Activity',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.2,
+                                  ),
+                            ),
                             const SizedBox(height: 10),
                             ...logs.map((e) {
                               final title = (e['itemTitle'] ?? 'Document').toString();
@@ -627,9 +1033,15 @@ $deepLink
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Uploaded: $title', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800)),
+                                    Text(
+                                      'Uploaded: $title',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                                    ),
                                     const SizedBox(height: 4),
-                                    Text('${_prettyWhen(when)} • SHA $shaShort', style: Theme.of(context).textTheme.bodySmall),
+                                    Text(
+                                      '${_prettyWhen(when)} • SHA $shaShort',
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
                                   ],
                                 ),
                               );
@@ -677,8 +1089,10 @@ $deepLink
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       pinStatusPill,
-                      if (portalClosedPill != null) ...[const SizedBox(width: 6), portalClosedPill],
-                      if (overdueBadge != null) ...[const SizedBox(width: 6), overdueBadge],
+                      if (portalClosedPill != null) ...[
+                        const SizedBox(width: 6),
+                        portalClosedPill,
+                      ],
                     ],
                   ),
                   onTap: isFinalized ? finalizedMsg : _openClientPortal,
@@ -721,9 +1135,7 @@ $deepLink
                   icon: Icons.mail_outline,
                   title: 'Letters',
                   subtitle: 'AICPA-aligned letters',
-                  trailing: vm.lettersGenerated > 0
-                      ? _Pill(text: '${vm.lettersGenerated} generated', bg: cs.secondaryContainer, border: cs.secondary.withOpacity(0.35))
-                      : null,
+                  trailing: _lettersGeneratedPill(vm, cs),
                   onTap: _openLetters,
                 ),
                 const SizedBox(height: 10),
@@ -732,12 +1144,6 @@ $deepLink
                   icon: Icons.fact_check_outlined,
                   title: 'PBC Builder',
                   subtitle: 'Requests • evidence • reminders',
-                  trailing: overdueBadge ??
-                      _Pill(
-                        text: '${vm.pbcProvided}/${vm.pbcTotal} provided',
-                        bg: surfaceCard,
-                        border: cs.onSurface.withOpacity(0.10),
-                      ),
                   onTap: _openPbc,
                 ),
                 const SizedBox(height: 18),
@@ -745,8 +1151,13 @@ $deepLink
                 Row(
                   children: [
                     Expanded(
-                      child: Text('Workpapers',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.2)),
+                      child: Text(
+                        'Workpapers',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.2,
+                            ),
+                      ),
                     ),
                     FilledButton.icon(
                       onPressed: _busy ? null : _addWorkpaper,
@@ -780,7 +1191,7 @@ $deepLink
       ),
     );
   }
-}
+} // ✅ END OF STATE CLASS
 
 /* ======================= VM / Models ======================= */
 
@@ -791,15 +1202,10 @@ class _Vm {
   final List<WorkpaperModel> workpapers;
 
   final int lettersGenerated;
-  final bool planningCompleted;
 
   final int pbcRequested;
   final int pbcReceived;
   final int pbcReviewed;
-
-  int get pbcTotal => pbcRequested + pbcReceived + pbcReviewed;
-  int get pbcProvided => pbcReceived + pbcReviewed;
-
   final int pbcOverdueCount;
 
   final int totalWorkpapers;
@@ -812,8 +1218,13 @@ class _Vm {
   final _HealthTone healthTone;
 
   final String clientPortalPin;
-
   final bool canUseFileSystem;
+
+  final ExportHistoryVm exportHistory;
+  final List<AiPriorityHistoryEntry> aiPriorityHistory;
+
+  final int discrepancyOpenCount;
+  final double discrepancyOpenTotal;
 
   const _Vm({
     required this.engagement,
@@ -821,7 +1232,6 @@ class _Vm {
     required this.risk,
     required this.workpapers,
     required this.lettersGenerated,
-    required this.planningCompleted,
     required this.pbcRequested,
     required this.pbcReceived,
     required this.pbcReviewed,
@@ -834,6 +1244,10 @@ class _Vm {
     required this.healthTone,
     required this.clientPortalPin,
     required this.canUseFileSystem,
+    required this.exportHistory,
+    required this.aiPriorityHistory,
+    required this.discrepancyOpenCount,
+    required this.discrepancyOpenTotal,
   });
 }
 
@@ -920,7 +1334,7 @@ _HealthColors _healthColors(BuildContext context, _HealthTone tone) {
     case _HealthTone.risk:
       return _HealthColors(cs.errorContainer, cs.error.withOpacity(0.40));
     case _HealthTone.finalized:
-      return _HealthColors(cs.surface, cs.onSurface.withOpacity(0.12));
+      return _HealthColors(cs.surfaceVariant, cs.onSurface.withOpacity(0.12));
     case _HealthTone.unknown:
       return _HealthColors(cs.surfaceVariant, cs.onSurface.withOpacity(0.10));
   }
@@ -970,11 +1384,22 @@ class _HeaderCard extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.2)),
-                const SizedBox(height: 6),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withOpacity(0.70))),
-              ]),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.2),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurface.withOpacity(0.70),
+                        ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(width: 10),
             trailing,
@@ -991,7 +1416,6 @@ class _ActionCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.onLongPress,
     this.trailing,
   });
 
@@ -999,7 +1423,6 @@ class _ActionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
   final Widget? trailing;
 
   @override
@@ -1011,7 +1434,6 @@ class _ActionCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -1031,7 +1453,12 @@ class _ActionCard extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.2)),
                   const SizedBox(height: 6),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withOpacity(0.70))),
+                  Text(
+                    subtitle,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurface.withOpacity(0.70),
+                        ),
+                  ),
                 ]),
               ),
               if (trailing != null) ...[
@@ -1097,8 +1524,16 @@ class _RiskSummaryCard extends StatelessWidget {
                 children: [
                   _Pill(text: 'Overall: $level ($score/5)', bg: bg, border: border),
                   healthPill,
-                  _Pill(text: 'Last assessed: $assessed', bg: cs.surfaceVariant, border: cs.onSurface.withOpacity(0.10)),
-                  _Pill(text: extraLine, bg: cs.surfaceVariant, border: cs.onSurface.withOpacity(0.10)),
+                  _Pill(
+                    text: 'Last assessed: $assessed',
+                    bg: cs.surfaceVariant,
+                    border: cs.onSurface.withOpacity(0.10),
+                  ),
+                  _Pill(
+                    text: extraLine,
+                    bg: cs.surfaceVariant,
+                    border: cs.onSurface.withOpacity(0.10),
+                  ),
                 ],
               ),
             ),
@@ -1115,7 +1550,11 @@ class _RiskSummaryCard extends StatelessWidget {
 }
 
 class _WorkpaperRow extends StatelessWidget {
-  const _WorkpaperRow({required this.workpaper, required this.onOpen});
+  const _WorkpaperRow({
+    required this.workpaper,
+    required this.onOpen,
+  });
+
   final WorkpaperModel workpaper;
   final VoidCallback onOpen;
 
@@ -1168,8 +1607,15 @@ class _Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: bg, border: Border.all(color: border)),
-      child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: bg,
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800),
+      ),
     );
   }
 }
@@ -1217,7 +1663,11 @@ class _ErrorState extends StatelessWidget {
         const SizedBox(height: 8),
         Text(message, style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
         const SizedBox(height: 16),
-        FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
+        FilledButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Try again'),
+        ),
       ],
     );
   }

@@ -1,13 +1,11 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../services/evidence_ledger.dart';
-import '../services/letter_exporter.dart';
+import '../services/engagement_meta.dart';
+import '../services/pbc_store.dart';
+import '../services/client_portal_fs.dart';
+import '../services/timeline_export_scanner.dart';
 
 class AuditTimelineCard extends StatefulWidget {
   const AuditTimelineCard({
@@ -17,8 +15,6 @@ class AuditTimelineCard extends StatefulWidget {
   });
 
   final String engagementId;
-
-  /// Optional: if you want to scroll to the Evidence Ledger card from engagement_detail.dart
   final VoidCallback? onScrollToLedger;
 
   @override
@@ -35,174 +31,73 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
   }
 
   Future<_TimelineVm> _load() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final docsPath = docs.path;
+    final planning = await EngagementMeta.isPlanningCompleted(widget.engagementId);
 
-    final planning = await _readPlanningCompleted(docsPath, widget.engagementId);
+    final pbcItemsRaw = await PbcStore.loadRaw(widget.engagementId);
+    final pbc = _pbcStatsFromRaw(pbcItemsRaw);
+    final overdue = _pbcOverdueFromRaw(pbcItemsRaw);
 
-    final lettersCount = await LetterExporter.getLettersGeneratedCount(
-      docsPath: docsPath,
-      engagementId: widget.engagementId,
-    );
-
-    final pbc = await _readPbcStats(docsPath, widget.engagementId);
-    final overdue = await _readPbcOverdueCount(docsPath, widget.engagementId);
-
-    final portal = await _readPortalUploadsCountAndLatest(docsPath, widget.engagementId);
-
-    final deliverables = await _findLatestExport(
-      folder: p.join(docsPath, 'Auditron', 'Deliverables'),
-      prefix: 'Auditron_DeliverablePack_${_safeId(widget.engagementId)}_',
-    );
-
-    final packet = await _findLatestExport(
-      folder: p.join(docsPath, 'Auditron', 'Packets'),
-      prefix: 'Auditron_Packet_${_safeId(widget.engagementId)}_',
-    );
+    final portal = await _portalUploadsFromFs(widget.engagementId);
 
     final integrity = await _computeIntegrityStatus(widget.engagementId);
 
+    final exports = await scanTimelineExports(widget.engagementId);
+
     return _TimelineVm(
       planningCompleted: planning,
-      lettersGenerated: lettersCount,
+      lettersGenerated: exports.lettersGenerated,
       pbcRequested: pbc.requested,
       pbcReceived: pbc.received,
       pbcReviewed: pbc.reviewed,
       pbcOverdue: overdue,
       portalUploads: portal.count,
       portalLastUploadAt: portal.latestIso,
-      deliverableLastExportAt: deliverables,
-      packetLastExportAt: packet,
+      deliverableLastExportAt: exports.deliverableLastExportAt,
+      packetLastExportAt: exports.packetLastExportAt,
       integrityTotalChecked: integrity.totalChecked,
       integrityIssues: integrity.issues,
     );
   }
 
-  Future<bool> _readPlanningCompleted(String docsPath, String engagementId) async {
-    try {
-      final f = File(p.join(docsPath, 'Auditron', 'EngagementMeta', '$engagementId.json'));
-      if (!await f.exists()) return false;
-      final raw = await f.readAsString();
-      if (raw.trim().isEmpty) return false;
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      return data['planningCompleted'] == true;
-    } catch (_) {
-      return false;
+  _PbcStats _pbcStatsFromRaw(List<Map<String, dynamic>> items) {
+    int requested = 0, received = 0, reviewed = 0;
+    for (final it in items) {
+      final s = (it['status'] ?? '').toString().toLowerCase();
+      if (s == 'requested') requested++;
+      if (s == 'received') received++;
+      if (s == 'reviewed') reviewed++;
     }
+    return _PbcStats(requested: requested, received: received, reviewed: reviewed);
   }
 
-  Future<_PbcStats> _readPbcStats(String docsPath, String engagementId) async {
-    try {
-      final f = File(p.join(docsPath, 'Auditron', 'PBC', '$engagementId.json'));
-      if (!await f.exists()) return const _PbcStats();
-
-      final raw = await f.readAsString();
-      if (raw.trim().isEmpty) return const _PbcStats();
-
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final items = (data['items'] as List<dynamic>? ?? const []);
-
-      int requested = 0, received = 0, reviewed = 0;
-      for (final it in items) {
-        if (it is! Map) continue;
-        final s = (it['status'] ?? '').toString().toLowerCase();
-        if (s == 'requested') requested++;
-        if (s == 'received') received++;
-        if (s == 'reviewed') reviewed++;
-      }
-
-      return _PbcStats(requested: requested, received: received, reviewed: reviewed);
-    } catch (_) {
-      return const _PbcStats();
+  int _pbcOverdueFromRaw(List<Map<String, dynamic>> items) {
+    int overdue = 0;
+    for (final it in items) {
+      final status = (it['status'] ?? '').toString().toLowerCase();
+      if (status != 'requested') continue;
+      final requestedAt = (it['requestedAt'] ?? '').toString().trim();
+      final dt = DateTime.tryParse(requestedAt);
+      if (dt == null) continue;
+      if (DateTime.now().difference(dt).inDays >= 7) overdue++;
     }
+    return overdue;
   }
 
-  Future<int> _readPbcOverdueCount(String docsPath, String engagementId) async {
+  Future<_CountLatest> _portalUploadsFromFs(String engagementId) async {
     try {
-      final f = File(p.join(docsPath, 'Auditron', 'PBC', '$engagementId.json'));
-      if (!await f.exists()) return 0;
-
-      final raw = await f.readAsString();
-      if (raw.trim().isEmpty) return 0;
-
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final items = (data['items'] as List<dynamic>? ?? const []);
-
-      int overdue = 0;
-      for (final it in items) {
-        if (it is! Map) continue;
-
-        final status = (it['status'] ?? '').toString().toLowerCase();
-        if (status != 'requested') continue;
-
-        final requestedAt = (it['requestedAt'] ?? '').toString().trim();
-        final dt = DateTime.tryParse(requestedAt);
-        if (dt == null) continue;
-
-        if (DateTime.now().difference(dt).inDays >= 7) overdue++;
-      }
-      return overdue;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  Future<_CountLatest> _readPortalUploadsCountAndLatest(String docsPath, String engagementId) async {
-    try {
-      final f = File(p.join(docsPath, 'Auditron', 'ClientPortalLogs', '$engagementId.jsonl'));
-      if (!await f.exists()) return const _CountLatest(count: 0, latestIso: '');
-
-      final lines = await f.readAsLines();
+      final events = await ClientPortalFs.readPortalLogEvents(engagementId, limit: 500);
       int count = 0;
       String latest = '';
-
-      for (final line in lines) {
-        final s = line.trim();
-        if (s.isEmpty) continue;
-        Map<String, dynamic> m;
-        try {
-          m = jsonDecode(s) as Map<String, dynamic>;
-        } catch (_) {
-          continue;
-        }
-
+      for (final m in events) {
         final kind = (m['kind'] ?? '').toString().toLowerCase();
         if (kind != 'upload') continue;
-
         count++;
         final createdAt = (m['createdAt'] ?? '').toString().trim();
-        if (createdAt.isNotEmpty && createdAt.compareTo(latest) > 0) {
-          latest = createdAt;
-        }
+        if (createdAt.isNotEmpty && createdAt.compareTo(latest) > 0) latest = createdAt;
       }
-
       return _CountLatest(count: count, latestIso: latest);
     } catch (_) {
       return const _CountLatest(count: 0, latestIso: '');
-    }
-  }
-
-  Future<String> _findLatestExport({
-    required String folder,
-    required String prefix,
-  }) async {
-    try {
-      final dir = Directory(folder);
-      if (!await dir.exists()) return '';
-
-      final files = dir
-          .listSync()
-          .whereType<File>()
-          .where((f) => p.basename(f.path).startsWith(prefix))
-          .toList();
-
-      if (files.isEmpty) return '';
-
-      files.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-      final dt = files.first.lastModifiedSync();
-      return dt.toIso8601String();
-    } catch (_) {
-      return '';
     }
   }
 
@@ -211,7 +106,6 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
       final entries = await EvidenceLedger.readAll(engagementId);
       if (entries.isEmpty) return const _IntegrityVm(totalChecked: 0, issues: 0);
 
-      // Check up to last 20 entries (fast)
       final toCheck = entries.reversed.take(20).toList();
       int issues = 0;
 
@@ -262,7 +156,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                 Text(
                   'Progress snapshot across planning, PBC, portal uploads, integrity, and exports.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurface.withValues(alpha: 0.70),
+                        color: cs.onSurface.withOpacity(0.70),
                       ),
                 ),
                 const SizedBox(height: 12),
@@ -270,18 +164,15 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                 if (snap.connectionState != ConnectionState.done)
                   const Center(child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator()))
                 else if (snap.hasError)
-                  Text(
-                    'Timeline failed to load: ${snap.error}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  )
+                  Text('Timeline failed to load: ${snap.error}', style: Theme.of(context).textTheme.bodySmall)
                 else ...[
                   _TimelineRow(
                     icon: Icons.assignment_outlined,
                     title: 'Planning',
                     subtitle: vm!.planningCompleted ? 'Completed ✅' : 'Not completed',
                     pillText: vm.planningCompleted ? 'Complete' : 'Open',
-                    pillBg: vm.planningCompleted ? cs.secondaryContainer : cs.surfaceContainerHighest,
-                    pillBorder: vm.planningCompleted ? cs.secondary.withValues(alpha: 0.35) : cs.onSurface.withValues(alpha: 0.10),
+                    pillBg: vm.planningCompleted ? cs.secondaryContainer : cs.surfaceVariant,
+                    pillBorder: vm.planningCompleted ? cs.secondary.withOpacity(0.35) : cs.onSurface.withOpacity(0.10),
                     onTap: () => context.pushNamed('engagementPlanning', pathParameters: {'id': widget.engagementId}),
                   ),
                   const SizedBox(height: 10),
@@ -291,8 +182,8 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'PBC',
                     subtitle: 'Requested ${vm.pbcRequested} • Received ${vm.pbcReceived} • Reviewed ${vm.pbcReviewed}',
                     pillText: vm.pbcOverdue > 0 ? 'Overdue ${vm.pbcOverdue}' : 'OK',
-                    pillBg: vm.pbcOverdue > 0 ? cs.errorContainer : cs.surfaceContainerHighest,
-                    pillBorder: vm.pbcOverdue > 0 ? cs.error.withValues(alpha: 0.35) : cs.onSurface.withValues(alpha: 0.10),
+                    pillBg: vm.pbcOverdue > 0 ? cs.errorContainer : cs.surfaceVariant,
+                    pillBorder: vm.pbcOverdue > 0 ? cs.error.withOpacity(0.35) : cs.onSurface.withOpacity(0.10),
                     onTap: () => context.pushNamed('pbcList', pathParameters: {'id': widget.engagementId}),
                   ),
                   const SizedBox(height: 10),
@@ -302,10 +193,10 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Client Portal Uploads',
                     subtitle: vm.portalUploads == 0
                         ? 'No uploads yet'
-                        : '${vm.portalUploads} uploaded • Last ${_prettySafe(vm.portalLastUploadAt, _prettyWhen)}',
+                        : '${vm.portalUploads} uploaded • Last ${vm.portalLastUploadAt.isEmpty ? "—" : _prettyWhen(vm.portalLastUploadAt)}',
                     pillText: vm.portalUploads == 0 ? 'None' : 'Active',
-                    pillBg: vm.portalUploads == 0 ? cs.surfaceContainerHighest : cs.tertiaryContainer,
-                    pillBorder: vm.portalUploads == 0 ? cs.onSurface.withValues(alpha: 0.10) : cs.tertiary.withValues(alpha: 0.35),
+                    pillBg: vm.portalUploads == 0 ? cs.surfaceVariant : cs.tertiaryContainer,
+                    pillBorder: vm.portalUploads == 0 ? cs.onSurface.withOpacity(0.10) : cs.tertiary.withOpacity(0.35),
                     onTap: () => context.pushNamed('clientPortal', pathParameters: {'id': widget.engagementId}),
                   ),
                   const SizedBox(height: 10),
@@ -313,12 +204,10 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                   _TimelineRow(
                     icon: Icons.verified_outlined,
                     title: 'Evidence Integrity',
-                    subtitle: vm.integrityTotalChecked == 0
-                        ? 'No evidence recorded yet'
-                        : 'Checked last ${vm.integrityTotalChecked} • Issues ${vm.integrityIssues}',
+                    subtitle: vm.integrityTotalChecked == 0 ? 'No evidence recorded yet' : 'Checked last ${vm.integrityTotalChecked} • Issues ${vm.integrityIssues}',
                     pillText: vm.integrityIssues > 0 ? 'Issues' : 'OK',
                     pillBg: vm.integrityIssues > 0 ? cs.errorContainer : cs.secondaryContainer,
-                    pillBorder: vm.integrityIssues > 0 ? cs.error.withValues(alpha: 0.35) : cs.secondary.withValues(alpha: 0.35),
+                    pillBorder: vm.integrityIssues > 0 ? cs.error.withOpacity(0.35) : cs.secondary.withOpacity(0.35),
                     onTap: widget.onScrollToLedger,
                   ),
                   const SizedBox(height: 10),
@@ -328,8 +217,8 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Letters',
                     subtitle: vm.lettersGenerated == 0 ? 'No letters generated' : '${vm.lettersGenerated} generated',
                     pillText: vm.lettersGenerated == 0 ? '0' : '${vm.lettersGenerated}',
-                    pillBg: cs.surfaceContainerHighest,
-                    pillBorder: cs.onSurface.withValues(alpha: 0.10),
+                    pillBg: cs.surfaceVariant,
+                    pillBorder: cs.onSurface.withOpacity(0.10),
                     onTap: () => context.pushNamed('lettersHub', pathParameters: {'id': widget.engagementId}),
                   ),
                   const SizedBox(height: 10),
@@ -337,12 +226,10 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                   _TimelineRow(
                     icon: Icons.inventory_2_outlined,
                     title: 'Deliverable Pack',
-                    subtitle: vm.deliverableLastExportAt.isEmpty
-                        ? 'Not exported'
-                        : 'Last export ${_prettyWhen(vm.deliverableLastExportAt)}',
+                    subtitle: vm.deliverableLastExportAt.isEmpty ? 'Not exported' : 'Last export ${_prettyWhen(vm.deliverableLastExportAt)}',
                     pillText: vm.deliverableLastExportAt.isEmpty ? 'Not yet' : 'Exported',
-                    pillBg: vm.deliverableLastExportAt.isEmpty ? cs.surfaceContainerHighest : cs.secondaryContainer,
-                    pillBorder: vm.deliverableLastExportAt.isEmpty ? cs.onSurface.withValues(alpha: 0.10) : cs.secondary.withValues(alpha: 0.35),
+                    pillBg: vm.deliverableLastExportAt.isEmpty ? cs.surfaceVariant : cs.secondaryContainer,
+                    pillBorder: vm.deliverableLastExportAt.isEmpty ? cs.onSurface.withOpacity(0.10) : cs.secondary.withOpacity(0.35),
                     onTap: null,
                   ),
                   const SizedBox(height: 10),
@@ -352,8 +239,8 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Audit Packet',
                     subtitle: vm.packetLastExportAt.isEmpty ? 'Not exported' : 'Last export ${_prettyWhen(vm.packetLastExportAt)}',
                     pillText: vm.packetLastExportAt.isEmpty ? 'Not yet' : 'Exported',
-                    pillBg: vm.packetLastExportAt.isEmpty ? cs.surfaceContainerHighest : cs.secondaryContainer,
-                    pillBorder: vm.packetLastExportAt.isEmpty ? cs.onSurface.withValues(alpha: 0.10) : cs.secondary.withValues(alpha: 0.35),
+                    pillBg: vm.packetLastExportAt.isEmpty ? cs.surfaceVariant : cs.secondaryContainer,
+                    pillBorder: vm.packetLastExportAt.isEmpty ? cs.onSurface.withOpacity(0.10) : cs.secondary.withOpacity(0.35),
                     onTap: () => context.pushNamed('engagementPacket', pathParameters: {'id': widget.engagementId}),
                   ),
                 ],
@@ -364,13 +251,6 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
       },
     );
   }
-}
-
-String _safeId(String id) => id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
-
-String _prettySafe(String iso, String Function(String) pretty) {
-  if (iso.trim().isEmpty) return '—';
-  return pretty(iso);
 }
 
 class _TimelineVm {
@@ -461,7 +341,7 @@ class _TimelineRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Material(
-      color: cs.surfaceContainerHighest,
+      color: cs.surfaceVariant,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -474,37 +354,29 @@ class _TimelineRow extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.12),
+                  color: cs.primary.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
+                  border: Border.all(color: cs.onSurface.withOpacity(0.08)),
                 ),
                 child: Icon(icon, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.2,
-                        ),
-                  ),
+                  Text(title, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.2)),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurface.withValues(alpha: 0.70),
-                        ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withOpacity(0.70)),
                   ),
                 ]),
               ),
               const SizedBox(width: 10),
               _Pill(text: pillText, bg: pillBg, border: pillBorder),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: cs.onSurface.withValues(alpha: 0.55)),
+              Icon(Icons.chevron_right, color: cs.onSurface.withOpacity(0.55)),
             ],
           ),
         ),
@@ -514,11 +386,7 @@ class _TimelineRow extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({
-    required this.text,
-    required this.bg,
-    required this.border,
-  });
+  const _Pill({required this.text, required this.bg, required this.border});
 
   final String text;
   final Color bg;
@@ -528,17 +396,8 @@ class _Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: bg,
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-      ),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: bg, border: Border.all(color: border)),
+      child: Text(text, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
     );
   }
 }

@@ -262,4 +262,14 @@ class EvidenceLedger {
       return EvidenceVerifyResult(entry: e, exists: false, hashMatches: false, currentSha256: '');
     }
   }
+
+  /// ✅ NEW: verify all (newest first)
+  static Future<List<EvidenceVerifyResult>> verifyAll(String engagementId) async {
+    final entries = await readAll(engagementId);
+    final out = <EvidenceVerifyResult>[];
+    for (final e in entries.reversed) {
+      out.add(await verifyEntry(e));
+    }
+    return out;
+  }
 }

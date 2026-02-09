@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +11,9 @@ import '../data/models/client_models.dart';
 import '../data/models/repositories/clients_repository.dart';
 import '../services/client_csv_importer.dart';
 import '../services/client_meta.dart';
+
+// ✅ use the FS facade (web-safe)
+import '../services/engagement_detail_fs.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({
@@ -33,6 +38,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   final _searchCtrl = TextEditingController();
 
   bool get _canFile => !kIsWeb && widget.store.canUseFileSystem;
+  String get _docsPath => widget.store.documentsPath ?? '';
 
   @override
   void initState() {
@@ -57,7 +63,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
     final out = <_ClientRowVm>[];
     for (final c in list) {
       final addr = await ClientMeta.readAddress(c.id);
-      final a = _Addr.fromClientMeta(addr);
+      final a = _Addr.fromMeta(addr);
 
       final display = _displayLinesForClient(c, a);
 
@@ -112,6 +118,29 @@ class _ClientsScreenState extends State<ClientsScreen> {
     context.pushNamed('clientDetail', pathParameters: {'id': id});
   }
 
+  // ✅ Write address meta ONLY on desktop (file system available)
+  Future<void> _writeClientAddress(String clientId, _Addr address) async {
+    if (!_canFile || _docsPath.trim().isEmpty) return;
+
+    final metaDir = '$_docsPath/Auditron/ClientMeta';
+    await ensureDir(metaDir);
+
+    final fp = '$metaDir/$clientId.json';
+
+    Map<String, dynamic> data = {};
+    try {
+      if (await fileExists(fp)) {
+        final raw = await readTextFile(fp);
+        if (raw.trim().isNotEmpty) data = jsonDecode(raw) as Map<String, dynamic>;
+      }
+    } catch (_) {
+      data = {};
+    }
+
+    data['address'] = address.toJson();
+    await writeTextFile(fp, jsonEncode(data));
+  }
+
   Future<void> _createClient() async {
     if (_busy) return;
 
@@ -134,21 +163,26 @@ class _ClientsScreenState extends State<ClientsScreen> {
           location: cityState,
           status: 'Active',
           updated: '',
+          taxId: created.taxId.trim(),
+          email: created.email.trim(),
+          phone: created.phone.trim(),
         ),
       );
 
-      await ClientMeta.saveAddress(
-        clientId: saved.id,
-        address1: created.line1,
-        address2: created.line2,
-        city: created.city,
-        state: created.state,
-        postal: created.zip,
-        country: '',
+      await _writeClientAddress(
+        saved.id,
+        _Addr(
+          line1: created.line1,
+          line2: created.line2,
+          city: created.city,
+          state: created.state,
+          zip: created.zip,
+        ),
       );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Client created ✅')));
+
       await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -157,13 +191,6 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
   Future<void> _importClientsCsv() async {
     if (_busy) return;
-
-    if (!_canFile) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CSV import is disabled on web demo.')),
-      );
-      return;
-    }
 
     setState(() => _busy = true);
     try {
@@ -199,17 +226,21 @@ class _ClientsScreenState extends State<ClientsScreen> {
             location: cityState,
             status: 'Active',
             updated: '',
+            taxId: '',
+            email: '',
+            phone: '',
           ),
         );
 
-        await ClientMeta.saveAddress(
-          clientId: saved.id,
-          address1: r.line1,
-          address2: r.line2,
-          city: r.city,
-          state: r.state,
-          postal: r.zip,
-          country: '',
+        await _writeClientAddress(
+          saved.id,
+          _Addr(
+            line1: r.line1,
+            line2: r.line2,
+            city: r.city,
+            state: r.state,
+            zip: r.zip,
+          ),
         );
 
         imported++;
@@ -219,10 +250,13 @@ class _ClientsScreenState extends State<ClientsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('CSV import complete ✅ Imported $imported • Skipped $skipped')),
       );
+
       await _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('CSV import failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CSV import failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -239,9 +273,13 @@ class _ClientsScreenState extends State<ClientsScreen> {
         c.id,
         c.location,
         c.status,
+        c.taxId,
+        c.email,
+        c.phone,
         vm.addr.streetLine,
         vm.addr.cityLine,
       ].join(' ').toLowerCase();
+
       return hay.contains(q);
     }
 
@@ -257,7 +295,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
         title: const Text('Clients'),
         actions: [
           IconButton(
-            tooltip: _canFile ? 'Import CSV' : 'Disabled on web',
+            tooltip: 'Import CSV',
             onPressed: _busy ? null : _importClientsCsv,
             icon: const Icon(Icons.upload_file),
           ),
@@ -279,6 +317,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
           if (snap.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
+
           if (snap.hasError) {
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -286,9 +325,17 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 const SizedBox(height: 40),
                 const Icon(Icons.error_outline, size: 44),
                 const SizedBox(height: 10),
-                Text('Clients failed to load.', style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+                Text(
+                  'Clients failed to load.',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 8),
-                Text(snap.error.toString(), style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
+                Text(
+                  snap.error.toString(),
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: _busy ? null : _refresh,
@@ -311,45 +358,44 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   child: const ListTile(
                     leading: Icon(Icons.public),
                     title: Text('Web demo mode'),
-                    subtitle: Text('Local address storage + CSV import are disabled on web.'),
+                    subtitle: Text('Client address meta storage is disabled on web (contact fields still work).'),
                   ),
                 ),
               if (!_canFile) const SizedBox(height: 12),
-
               TextField(
                 controller: _searchCtrl,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search),
-                  hintText: 'Search clients…',
+                  hintText: 'Search clients (name, contact, status, id, address)…',
                   filled: true,
-                  fillColor: cs.surfaceVariant,
+                  fillColor: cs.surfaceContainerHighest,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(999),
-                    borderSide: BorderSide(color: cs.onSurface.withOpacity(0.08)),
+                    borderSide: BorderSide(color: cs.onSurface.withValues(alpha: 0.08)),
                   ),
                 ),
               ),
               const SizedBox(height: 14),
-
               if (filtered.isEmpty)
                 _EmptyState(
                   title: all.isEmpty ? 'No clients yet' : 'No matches',
                   subtitle: all.isEmpty ? 'Create your first client to begin.' : 'Try a different search term.',
                 )
               else
-                ...filtered.map(
-                  (vm) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _ClientCard(
-                      name: vm.client.name,
-                      line1: vm.displayLine1,
-                      line2: vm.displayLine2,
-                      status: vm.client.status,
-                      updated: _prettyMonth(vm.client.updated),
-                      onTap: () => _openClient(vm.client.id),
-                    ),
-                  ),
-                ),
+                ...filtered.map((vm) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _ClientCard(
+                        name: vm.client.name,
+                        line1: vm.displayLine1,
+                        line2: vm.displayLine2,
+                        status: vm.client.status,
+                        updated: _prettyMonth(vm.client.updated),
+                        taxId: vm.client.taxId,
+                        email: vm.client.email,
+                        phone: vm.client.phone,
+                        onTap: () => _openClient(vm.client.id),
+                      ),
+                    )),
             ],
           );
         },
@@ -358,7 +404,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 }
 
-/* ========================= VMs ========================= */
+/* ========================= View models ========================= */
 
 class _ClientRowVm {
   final ClientModel client;
@@ -375,34 +421,34 @@ class _ClientRowVm {
 }
 
 class _Addr {
-  final String address1;
-  final String address2;
+  final String line1;
+  final String line2;
   final String city;
   final String state;
-  final String postal;
+  final String zip;
 
   const _Addr({
-    required this.address1,
-    required this.address2,
+    required this.line1,
+    required this.line2,
     required this.city,
     required this.state,
-    required this.postal,
+    required this.zip,
   });
 
-  static _Addr fromClientMeta(Map<String, dynamic> meta) {
-    // ClientMeta.readAddress returns keys: address1,address2,city,state,postal,country
+  static _Addr fromMeta(Map<String, dynamic> meta) {
+    final a = (meta['address'] is Map) ? (meta['address'] as Map) : meta;
     return _Addr(
-      address1: (meta['address1'] ?? '').toString().trim(),
-      address2: (meta['address2'] ?? '').toString().trim(),
-      city: (meta['city'] ?? '').toString().trim(),
-      state: (meta['state'] ?? '').toString().trim(),
-      postal: (meta['postal'] ?? '').toString().trim(),
+      line1: (a['line1'] ?? '').toString().trim(),
+      line2: (a['line2'] ?? '').toString().trim(),
+      city: (a['city'] ?? '').toString().trim(),
+      state: (a['state'] ?? '').toString().trim(),
+      zip: (a['zip'] ?? '').toString().trim(),
     );
   }
 
   String get streetLine {
-    final a = address1.trim();
-    final b = address2.trim();
+    final a = line1.trim();
+    final b = line2.trim();
     if (a.isEmpty && b.isEmpty) return '';
     if (b.isEmpty) return a;
     if (a.isEmpty) return b;
@@ -412,13 +458,21 @@ class _Addr {
   String get cityLine {
     final c = city.trim();
     final s = state.trim().toUpperCase();
-    final z = postal.trim();
+    final z = zip.trim();
     final left = [c, s].where((x) => x.isNotEmpty).join(', ');
     if (left.isEmpty && z.isEmpty) return '';
     if (left.isEmpty) return z;
     if (z.isEmpty) return left;
     return '$left $z';
   }
+
+  Map<String, dynamic> toJson() => {
+        'line1': line1.trim(),
+        'line2': line2.trim(),
+        'city': city.trim(),
+        'state': state.trim(),
+        'zip': zip.trim(),
+      };
 }
 
 /* ========================= UI ========================= */
@@ -430,6 +484,9 @@ class _ClientCard extends StatelessWidget {
     required this.line2,
     required this.status,
     required this.updated,
+    required this.taxId,
+    required this.email,
+    required this.phone,
     required this.onTap,
   });
 
@@ -438,14 +495,29 @@ class _ClientCard extends StatelessWidget {
   final String line2;
   final String status;
   final String updated;
+
+  final String taxId;
+  final String email;
+  final String phone;
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
+    final chips = <Widget>[
+  _Chip(text: 'Status: $status'),
+  _Chip(text: 'Updated: $updated'),
+
+  // ✅ Always show these so the UI change is visible immediately
+  _Chip(text: 'TIN: ${taxId.trim().isEmpty ? "—" : taxId.trim()}'),
+  _Chip(text: 'Email: ${email.trim().isEmpty ? "—" : email.trim()}'),
+  _Chip(text: 'Phone: ${phone.trim().isEmpty ? "—" : phone.trim()}'),
+];
+
     return Material(
-      color: cs.surfaceVariant,
+      color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -458,57 +530,57 @@ class _ClientCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: cs.primary.withOpacity(0.10),
+                  color: cs.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: cs.onSurface.withOpacity(0.08)),
+                  border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
                 ),
                 child: const Icon(Icons.apartment_outlined, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.15,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    line1,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurface.withOpacity(0.78),
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                  if (line2.trim().isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      line2,
+                      name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.15,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      line1,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: cs.onSurface.withOpacity(0.72),
-                            fontWeight: FontWeight.w600,
+                            color: cs.onSurface.withValues(alpha: 0.78),
+                            fontWeight: FontWeight.w700,
                           ),
                     ),
-                  ],
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      _Chip(text: 'Status: $status'),
-                      _Chip(text: 'Updated: $updated'),
+                    if (line2.trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        line2,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: cs.onSurface.withValues(alpha: 0.72),
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
                     ],
-                  ),
-                ]),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: chips,
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: cs.onSurface.withOpacity(0.55)),
+              Icon(Icons.chevron_right, color: cs.onSurface.withValues(alpha: 0.55)),
             ],
           ),
         ),
@@ -530,13 +602,13 @@ class _Chip extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: cs.surface,
-        border: Border.all(color: cs.onSurface.withOpacity(0.10)),
+        border: Border.all(color: cs.onSurface.withValues(alpha: 0.10)),
       ),
       child: Text(
         text,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w800,
-              color: cs.onSurface.withOpacity(0.72),
+              color: cs.onSurface.withValues(alpha: 0.72),
             ),
       ),
     );
@@ -557,7 +629,10 @@ class _EmptyState extends StatelessWidget {
           children: [
             const Icon(Icons.apartment_outlined, size: 48),
             const SizedBox(height: 10),
-            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
             Text(subtitle, textAlign: TextAlign.center),
           ],
@@ -567,7 +642,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/* ========================= Dialog ========================= */
+/* ========================= Create Client Dialog ========================= */
 
 class _CreateClientDialog extends StatefulWidget {
   const _CreateClientDialog();
@@ -584,6 +659,10 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
   final _stateCtrl = TextEditingController();
   final _zipCtrl = TextEditingController();
 
+  final _taxIdCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -592,6 +671,9 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
     _cityCtrl.dispose();
     _stateCtrl.dispose();
     _zipCtrl.dispose();
+    _taxIdCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -612,6 +694,9 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
         city: city,
         state: state,
         zip: zip,
+        taxId: _taxIdCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
       ),
     );
   }
@@ -630,6 +715,23 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
                 autofocus: true,
                 decoration: const InputDecoration(labelText: 'Client Name', border: OutlineInputBorder()),
                 onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _taxIdCtrl,
+                decoration: const InputDecoration(labelText: 'Tax ID / EIN (optional)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'Email (optional)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone (optional)', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -690,6 +792,10 @@ class _CreateClientResult {
   final String state;
   final String zip;
 
+  final String taxId;
+  final String email;
+  final String phone;
+
   const _CreateClientResult({
     required this.name,
     required this.line1,
@@ -697,6 +803,9 @@ class _CreateClientResult {
     required this.city,
     required this.state,
     required this.zip,
+    required this.taxId,
+    required this.email,
+    required this.phone,
   });
 }
 

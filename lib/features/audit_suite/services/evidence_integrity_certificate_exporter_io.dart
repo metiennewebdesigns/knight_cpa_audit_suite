@@ -1,14 +1,11 @@
-// lib/features/audit_suite/services/evidence_integrity_certificate_exporter_io.dart
-
-import 'dart:io' show Directory, File;
+import 'dart:io';
 import 'dart:math';
 
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-
-import '../../../core/utils/doc_path.dart';
 
 import 'evidence_ledger.dart';
 import 'preparer_profile.dart';
@@ -33,16 +30,16 @@ class EvidenceIntegrityCertificateExporter {
     required String engagementTitle,
     required String clientName,
     String engagementStatus = '',
+    // ✅ NEW (optional): pass from EngagementDetail where you have ClientModel
+    String clientTaxId = '',
+    String clientEmail = '',
+    String clientPhone = '',
   }) async {
     final generatedOn = _todayIso();
     final safeId = engagementId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
 
-    final docsPath = await getDocumentsPath();
-    if (docsPath == null || docsPath.isEmpty) {
-      throw StateError('Documents directory not available.');
-    }
-
-    final outDir = Directory(p.join(docsPath, 'Auditron', 'Certificates'));
+    final docs = await getApplicationDocumentsDirectory();
+    final outDir = Directory(p.join(docs.path, 'Auditron', 'Certificates'));
     if (!await outDir.exists()) {
       await outDir.create(recursive: true);
     }
@@ -133,12 +130,15 @@ class EvidenceIntegrityCertificateExporter {
           ),
         ),
         build: (_) => [
-          pw.Text(
-            'Evidence Integrity Certificate',
-            style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
-          ),
+          pw.Text('Evidence Integrity Certificate', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 10),
+
+          // ✅ Client + contact block
           pw.Text('Client: $clientName', style: const pw.TextStyle(fontSize: 11)),
+          if (clientTaxId.trim().isNotEmpty) pw.Text('Tax ID: ${clientTaxId.trim()}', style: const pw.TextStyle(fontSize: 11)),
+          if (clientEmail.trim().isNotEmpty) pw.Text('Email: ${clientEmail.trim()}', style: const pw.TextStyle(fontSize: 11)),
+          if (clientPhone.trim().isNotEmpty) pw.Text('Phone: ${clientPhone.trim()}', style: const pw.TextStyle(fontSize: 11)),
+
           pw.Text('Engagement: $engagementTitle', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Engagement ID: $engagementId', style: const pw.TextStyle(fontSize: 11)),
           if (engagementStatus.trim().isNotEmpty)
@@ -198,12 +198,8 @@ class EvidenceIntegrityCertificateExporter {
           pw.SizedBox(height: 10),
 
           pw.Text('Prepared By: $preparedBy', style: const pw.TextStyle(fontSize: 11)),
-          if (preparedTitle.isNotEmpty)
-            pw.Text('Title: $preparedTitle', style: const pw.TextStyle(fontSize: 11)),
-          pw.Text(
-            'Organization: ${organization.isEmpty ? "—" : organization}',
-            style: const pw.TextStyle(fontSize: 11),
-          ),
+          if (preparedTitle.isNotEmpty) pw.Text('Title: $preparedTitle', style: const pw.TextStyle(fontSize: 11)),
+          pw.Text('Organization: ${organization.isEmpty ? "—" : organization}', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Prepared With: Auditron', style: const pw.TextStyle(fontSize: 11)),
           pw.Text('Date: $generatedOn', style: const pw.TextStyle(fontSize: 11)),
 
@@ -219,7 +215,6 @@ class EvidenceIntegrityCertificateExporter {
 
     final bytes = await doc.save();
 
-    // NOTE: keep filename format, but avoid spaces before date if you want.
     final outFileName = 'Auditron_EvidenceIntegrity_${safeId}_v$certificateVersion $generatedOn.pdf';
     final outPath = p.join(outDir.path, outFileName);
 
@@ -231,11 +226,7 @@ class EvidenceIntegrityCertificateExporter {
       opened = (res.type == ResultType.done);
     } catch (_) {}
 
-    return EvidenceIntegrityCertificateResult(
-      savedPath: outPath,
-      savedFileName: outFileName,
-      didOpenFile: opened,
-    );
+    return EvidenceIntegrityCertificateResult(savedPath: outPath, savedFileName: outFileName, didOpenFile: opened);
   }
 
   static pw.Widget _tableHeader() {
@@ -247,22 +238,10 @@ class EvidenceIntegrityCertificateExporter {
       ),
       child: pw.Row(
         children: [
-          pw.Expanded(
-            flex: 4,
-            child: pw.Text('File', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-          ),
-          pw.Expanded(
-            flex: 3,
-            child: pw.Text('SHA-256', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-          ),
-          pw.Expanded(
-            flex: 2,
-            child: pw.Text('Date', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-          ),
-          pw.Expanded(
-            flex: 2,
-            child: pw.Text('Status', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
-          ),
+          pw.Expanded(flex: 4, child: pw.Text('File', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+          pw.Expanded(flex: 3, child: pw.Text('SHA-256', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+          pw.Expanded(flex: 2, child: pw.Text('Date', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
+          pw.Expanded(flex: 2, child: pw.Text('Status', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9))),
         ],
       ),
     );

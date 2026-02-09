@@ -58,8 +58,14 @@ class _AuditPlanningSummaryScreenState extends State<AuditPlanningSummaryScreen>
     if (eng == null) {
       throw StateError('Engagement not found: ${widget.engagementId}');
     }
+
     final client = await _clientsRepo.getById(eng.clientId);
     final clientName = client?.name ?? eng.clientId;
+
+    // ✅ NEW: contact fields
+    final clientTaxId = (client?.taxId ?? '').toString().trim();
+    final clientEmail = (client?.email ?? '').toString().trim();
+    final clientPhone = (client?.phone ?? '').toString().trim();
 
     final addr = await ClientMeta.readAddress(eng.clientId);
     final clientAddressLine = ClientMeta.formatSingleLine(addr);
@@ -68,6 +74,9 @@ class _AuditPlanningSummaryScreenState extends State<AuditPlanningSummaryScreen>
       engagement: eng,
       clientName: clientName,
       clientAddressLine: clientAddressLine,
+      clientTaxId: clientTaxId,
+      clientEmail: clientEmail,
+      clientPhone: clientPhone,
     );
   }
 
@@ -87,11 +96,21 @@ class _AuditPlanningSummaryScreenState extends State<AuditPlanningSummaryScreen>
   String _planningText({
     required String clientName,
     required String engagementTitle,
+    required String taxId,
+    required String email,
+    required String phone,
   }) {
+    final contactLines = <String>[];
+    if (taxId.trim().isNotEmpty) contactLines.add('Tax ID: ${taxId.trim()}');
+    if (email.trim().isNotEmpty) contactLines.add('Email: ${email.trim()}');
+    if (phone.trim().isNotEmpty) contactLines.add('Phone: ${phone.trim()}');
+
+    final contactBlock = contactLines.isEmpty ? '' : '\n' + contactLines.join('\n');
+
     return '''
 Audit Planning Summary
 
-Client: $clientName
+Client: $clientName$contactBlock
 Engagement: $engagementTitle
 Engagement ID: ${widget.engagementId}
 
@@ -183,6 +202,9 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
       final text = _planningText(
         clientName: vm.clientName,
         engagementTitle: vm.engagement.title,
+        taxId: vm.clientTaxId,
+        email: vm.clientEmail,
+        phone: vm.clientPhone,
       );
 
       final doc = pw.Document();
@@ -210,9 +232,24 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
                   ),
                 ),
               pw.SizedBox(height: 6),
-              pw.Text('Client: ${vm.clientName}', style: const pw.TextStyle(fontSize: 9)),
+
+              // ✅ Client block + contact lines
+              pw.Text('Client: ${vm.clientName}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+              if (vm.clientTaxId.trim().isNotEmpty)
+                pw.Text('Tax ID: ${vm.clientTaxId.trim()}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+              if (vm.clientEmail.trim().isNotEmpty)
+                pw.Text('Email: ${vm.clientEmail.trim()}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+              if (vm.clientPhone.trim().isNotEmpty)
+                pw.Text('Phone: ${vm.clientPhone.trim()}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+
               if (vm.clientAddressLine.trim().isNotEmpty)
-                pw.Text('Client Address: ${vm.clientAddressLine}', style: const pw.TextStyle(fontSize: 9)),
+                pw.Text(
+                  'Client Address: ${vm.clientAddressLine}',
+                  style: const pw.TextStyle(fontSize: 9),
+                  maxLines: 2,
+                  overflow: pw.TextOverflow.clip,
+                ),
+
               pw.SizedBox(height: 10),
             ],
           ),
@@ -256,7 +293,11 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(res.didOpenFile ? 'Exported + opened ${res.savedFileName} ✅' : 'Exported ${res.savedFileName} ✅')),
+        SnackBar(
+          content: Text(
+            res.didOpenFile ? 'Exported + opened ${res.savedFileName} ✅' : 'Exported ${res.savedFileName} ✅',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -329,6 +370,9 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
             final preview = _planningText(
               clientName: vm.clientName,
               engagementTitle: vm.engagement.title,
+              taxId: vm.clientTaxId,
+              email: vm.clientEmail,
+              phone: vm.clientPhone,
             );
 
             return ListView(
@@ -344,6 +388,7 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
                     ),
                   ),
                 if (!_canFile) const SizedBox(height: 12),
+
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -351,6 +396,7 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
                   ),
                 ),
                 const SizedBox(height: 14),
+
                 FilledButton.icon(
                   onPressed: _busy ? null : () => _exportPlanningPdf(vm),
                   icon: _busy
@@ -372,10 +418,18 @@ class _Vm {
   final String clientName;
   final String clientAddressLine;
 
+  // ✅ NEW: contact fields
+  final String clientTaxId;
+  final String clientEmail;
+  final String clientPhone;
+
   const _Vm({
     required this.engagement,
     required this.clientName,
     required this.clientAddressLine,
+    required this.clientTaxId,
+    required this.clientEmail,
+    required this.clientPhone,
   });
 }
 

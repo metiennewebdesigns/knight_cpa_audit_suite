@@ -117,13 +117,29 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
     }
   }
 
+  /// Builds a small contact block, used for UI and PDF.
+  List<String> _clientContactLines(ClientModel? client) {
+    final taxId = (client?.taxId ?? '').toString().trim();
+    final email = (client?.email ?? '').toString().trim();
+    final phone = (client?.phone ?? '').toString().trim();
+
+    final out = <String>[];
+    if (taxId.isNotEmpty) out.add('Tax ID: $taxId');
+    if (email.isNotEmpty) out.add('Email: $email');
+    if (phone.isNotEmpty) out.add('Phone: $phone');
+    return out;
+  }
+
   Future<List<int>> _buildPdf(_Vm vm) async {
     final doc = pw.Document();
 
     final eng = vm.engagement;
     final client = vm.client;
-    final clientName = client?.name ?? eng.clientId;
-    final clientLocation = client?.location ?? '';
+
+    final clientName = (client?.name ?? eng.clientId).toString();
+    final clientLocation = (client?.location ?? '').toString().trim();
+
+    final contactLines = _clientContactLines(client);
 
     final riskLevel = vm.risk.overallLevel();
     final riskScore = vm.risk.overallScore1to5();
@@ -156,8 +172,13 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
           pw.Text(letterDate),
           pw.SizedBox(height: 10),
 
+          // ✅ Client block + contact lines
           pw.Text(clientName, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-          if (clientLocation.trim().isNotEmpty) pw.Text(clientLocation),
+          if (clientLocation.isNotEmpty) pw.Text(clientLocation),
+          if (contactLines.isNotEmpty) ...[
+            pw.SizedBox(height: 4),
+            for (final line in contactLines) pw.Text(line),
+          ],
           pw.SizedBox(height: 12),
 
           pw.Text('Re: ${eng.title}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
@@ -336,7 +357,9 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                 const SizedBox(height: 60),
                 const Icon(Icons.error_outline, size: 44),
                 const SizedBox(height: 10),
-                Text('Failed to load letter data.', style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+                Text('Failed to load letter data.',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 Text(snap.error.toString(), textAlign: TextAlign.center),
               ],
@@ -344,7 +367,14 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
           }
 
           final vm = snap.data!;
-          final clientName = vm.client?.name ?? vm.engagement.clientId;
+          final clientName = (vm.client?.name ?? vm.engagement.clientId).toString();
+          final contactLines = _clientContactLines(vm.client);
+
+          final sub = <String>[
+            'Client: $clientName',
+            if (contactLines.isNotEmpty) ...contactLines,
+            'Engagement ID: ${vm.engagement.id}',
+          ].join('\n');
 
           return AbsorbPointer(
             absorbing: _busy,
@@ -365,7 +395,7 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                   child: ListTile(
                     leading: const Icon(Icons.assignment_outlined),
                     title: Text(vm.engagement.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: Text('Client: $clientName\nEngagement ID: ${vm.engagement.id}'),
+                    subtitle: Text(sub),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -393,7 +423,7 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                       ),
                       const SizedBox(height: 16),
                       FilledButton.icon(
-                        onPressed: _exportPdf,
+                        onPressed: _canFile ? _exportPdf : null,
                         icon: const Icon(Icons.picture_as_pdf_outlined),
                         label: Text(_canFile ? 'Export PDF to Documents' : 'Export disabled on web'),
                       ),
@@ -411,8 +441,18 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
   String _todayLong() {
     final d = DateTime.now();
     const months = [
-      'January','February','March','April','May','June',
-      'July','August','September','October','November','December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }

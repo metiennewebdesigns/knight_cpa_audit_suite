@@ -69,6 +69,11 @@ class _AuditPacketScreenState extends State<AuditPacketScreen> {
     final client = await _clientsRepo.getById(eng.clientId);
     final clientName = client?.name ?? eng.clientId;
 
+    // ✅ NEW: contact fields
+    final clientTaxId = (client?.taxId ?? '').toString().trim();
+    final clientEmail = (client?.email ?? '').toString().trim();
+    final clientPhone = (client?.phone ?? '').toString().trim();
+
     final addr = await ClientMeta.readAddress(eng.clientId);
     final clientAddressLine = ClientMeta.formatSingleLine(addr);
 
@@ -79,6 +84,9 @@ class _AuditPacketScreenState extends State<AuditPacketScreen> {
       engagement: eng,
       clientName: clientName,
       clientAddressLine: clientAddressLine,
+      clientTaxId: clientTaxId,
+      clientEmail: clientEmail,
+      clientPhone: clientPhone,
       risk: risk,
       workpapers: workpapers,
     );
@@ -104,15 +112,15 @@ class _AuditPacketScreenState extends State<AuditPacketScreen> {
     if (!_canExport) return;
 
     try {
-      // Reuse ClientPortalFs meta location logic via EngagementMeta file:
-      // We'll write EngagementMeta/<id>.json with planningCompleted.
-      // ClientPortalFs on IO already knows docs path, but doesn't have a write-meta API.
-      // So we just write a portal log event as a lightweight signal.
+      // Lightweight signal stored via portal log (IO only)
       await ClientPortalFs.logPortalEvent(
         engagementId: widget.engagementId,
         kind: 'planning_completed',
         note: 'Audit packet export marked planning complete',
-        extra: {'planningCompleted': true, 'planningCompletedAt': DateTime.now().toIso8601String()},
+        extra: {
+          'planningCompleted': true,
+          'planningCompletedAt': DateTime.now().toIso8601String(),
+        },
       );
     } catch (_) {}
   }
@@ -128,10 +136,17 @@ class _AuditPacketScreenState extends State<AuditPacketScreen> {
     final completeWps = vm.workpapers.where((w) => w.status.trim().toLowerCase() == 'complete').length;
     final openWps = (totalWps - completeWps).clamp(0, 999999);
 
+    final contactLines = <String>[];
+    if (vm.clientTaxId.trim().isNotEmpty) contactLines.add('Tax ID: ${vm.clientTaxId.trim()}');
+    if (vm.clientEmail.trim().isNotEmpty) contactLines.add('Email: ${vm.clientEmail.trim()}');
+    if (vm.clientPhone.trim().isNotEmpty) contactLines.add('Phone: ${vm.clientPhone.trim()}');
+
+    final contactBlock = contactLines.isEmpty ? '' : '\n' + contactLines.join('\n');
+
     return '''
 Audit Packet (Phase 1)
 
-Client: ${vm.clientName}
+Client: ${vm.clientName}$contactBlock
 Engagement: ${e.title}
 Engagement ID: ${e.id}
 Status: ${e.status}
@@ -200,9 +215,23 @@ This is a Phase 1 audit packet export. Attachments and full workpaper content pa
                   ),
                 ),
               pw.SizedBox(height: 6),
-              pw.Text('Client: ${vm.clientName}', style: const pw.TextStyle(fontSize: 9)),
+
+              // ✅ Client block + contact lines
+              pw.Text('Client: ${vm.clientName}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+              if (vm.clientTaxId.trim().isNotEmpty)
+                pw.Text('Tax ID: ${vm.clientTaxId.trim()}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+              if (vm.clientEmail.trim().isNotEmpty)
+                pw.Text('Email: ${vm.clientEmail.trim()}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+              if (vm.clientPhone.trim().isNotEmpty)
+                pw.Text('Phone: ${vm.clientPhone.trim()}', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+
               if (vm.clientAddressLine.trim().isNotEmpty)
-                pw.Text('Client Address: ${vm.clientAddressLine}', style: const pw.TextStyle(fontSize: 9)),
+                pw.Text(
+                  'Client Address: ${vm.clientAddressLine}',
+                  style: const pw.TextStyle(fontSize: 9),
+                  maxLines: 2,
+                  overflow: pw.TextOverflow.clip,
+                ),
               pw.SizedBox(height: 10),
             ],
           ),
@@ -225,9 +254,7 @@ This is a Phase 1 audit packet export. Attachments and full workpaper content pa
             pw.Text('Engagement: ${vm.engagement.title}', style: const pw.TextStyle(fontSize: 11)),
             pw.Text('Engagement ID: ${vm.engagement.id}', style: const pw.TextStyle(fontSize: 11)),
             pw.SizedBox(height: 14),
-
             pw.Paragraph(text: preview, style: const pw.TextStyle(fontSize: 11, lineSpacing: 3)),
-
             pw.SizedBox(height: 14),
             pw.Text('Workpapers Index', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 8),
@@ -369,6 +396,12 @@ class _Vm {
   final EngagementModel engagement;
   final String clientName;
   final String clientAddressLine;
+
+  // ✅ NEW: contact fields
+  final String clientTaxId;
+  final String clientEmail;
+  final String clientPhone;
+
   final RiskAssessmentModel risk;
   final List<WorkpaperModel> workpapers;
 
@@ -376,6 +409,9 @@ class _Vm {
     required this.engagement,
     required this.clientName,
     required this.clientAddressLine,
+    required this.clientTaxId,
+    required this.clientEmail,
+    required this.clientPhone,
     required this.risk,
     required this.workpapers,
   });

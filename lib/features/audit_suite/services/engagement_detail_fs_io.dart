@@ -1,18 +1,60 @@
-import 'dart:io' show Directory, File;
+import 'dart:io';
 
-Future<void> ensureDir(String path) async {
-  final dir = Directory(path);
+import 'package:path/path.dart' as p;
+
+Future<bool> fileExists(String path) async {
+  try {
+    return File(path).exists();
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<void> ensureDir(String dirPath) async {
+  final dir = Directory(dirPath);
   if (!await dir.exists()) {
     await dir.create(recursive: true);
   }
 }
 
-Future<bool> fileExists(String path) async => File(path).exists();
-
-Future<String> readTextFile(String path) async => File(path).readAsString();
-
-Future<void> writeTextFile(String path, String contents) async {
-  await File(path).writeAsString(contents, flush: true);
+Future<String> readTextFile(String path) async {
+  return File(path).readAsString();
 }
 
-Future<List<String>> readLines(String path) async => File(path).readAsLines();
+Future<void> writeTextFile(String path, String text) async {
+  final f = File(path);
+  await f.writeAsString(text, flush: true);
+}
+
+Future<List<String>> readLines(String path) async {
+  return File(path).readAsLines();
+}
+
+/// Returns absolute file paths (non-recursive) in folderPath
+Future<List<String>> listFiles(String folderPath) async {
+  try {
+    final dir = Directory(folderPath);
+    if (!await dir.exists()) return const <String>[];
+
+    final out = <String>[];
+    final ents = dir.listSync(recursive: false);
+    for (final e in ents) {
+      if (e is File) out.add(e.path);
+    }
+    return out;
+  } catch (_) {
+    return const <String>[];
+  }
+}
+
+Future<String> modifiedIso(String filePath) async {
+  try {
+    final dt = await File(filePath).lastModified();
+    return dt.toIso8601String();
+  } catch (_) {
+    return '';
+  }
+}
+
+// Utility used by other code sometimes
+String joinPath(String a, String b) => p.join(a, b);

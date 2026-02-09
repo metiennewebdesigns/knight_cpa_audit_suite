@@ -60,8 +60,16 @@ class _ClientListScreenState extends State<ClientListScreen> {
   List<ClientModel> _applyFilter(List<ClientModel> list) {
     if (_query.isEmpty) return list;
     return list.where((c) {
-      final hay =
-          '${c.name} ${c.location} ${c.status} ${c.updated} ${c.id}'.toLowerCase();
+      final hay = [
+        c.name,
+        c.location,
+        c.status,
+        c.updated,
+        c.id,
+        c.taxId,
+        c.email,
+        c.phone,
+      ].join(' ').toLowerCase();
       return hay.contains(_query);
     }).toList();
   }
@@ -97,9 +105,11 @@ class _ClientListScreenState extends State<ClientListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Clients'),
+        title: const Text('Clients (Legacy List)'),
         actions: [
           IconButton(
             tooltip: 'Create client',
@@ -194,8 +204,7 @@ class _ClientListScreenState extends State<ClientListScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          tileColor:
-                              Theme.of(context).colorScheme.surfaceContainerHighest,
+                          tileColor: cs.surfaceContainerHighest,
                           leading: const Icon(Icons.apartment_outlined),
                           title: Text(
                             c.name,
@@ -210,6 +219,9 @@ class _ClientListScreenState extends State<ClientListScreen> {
                                 _Chip(label: c.location),
                                 _Chip(label: 'Status: ${c.status}'),
                                 _Chip(label: 'Updated: ${_prettyMonth(c.updated)}'),
+                                _Chip(label: 'TIN: ${c.taxId.trim().isEmpty ? "—" : c.taxId.trim()}'),
+                                _Chip(label: 'Email: ${c.email.trim().isEmpty ? "—" : c.email.trim()}'),
+                                _Chip(label: 'Phone: ${c.phone.trim().isEmpty ? "—" : c.phone.trim()}'),
                               ],
                             ),
                           ),
@@ -233,9 +245,6 @@ class _ClientListScreenState extends State<ClientListScreen> {
   }
 }
 
-/* =======================
-   CREATE CLIENT DIALOG
-======================= */
 class _CreateClientDialog extends StatefulWidget {
   const _CreateClientDialog();
 
@@ -247,6 +256,10 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
   final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
 
+  final _taxIdCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+
   static const _statuses = ['Active', 'Inactive'];
   String _status = 'Active';
 
@@ -254,6 +267,9 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
   void dispose() {
     _nameCtrl.dispose();
     _locationCtrl.dispose();
+    _taxIdCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -269,6 +285,9 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
         location: location,
         status: _status,
         updated: '',
+        taxId: _taxIdCtrl.text.trim(),
+        email: _emailCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
       ),
     );
   }
@@ -279,60 +298,58 @@ class _CreateClientDialogState extends State<_CreateClientDialog> {
       title: const Text('Create Client'),
       content: SizedBox(
         width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Client Name',
-                border: OutlineInputBorder(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameCtrl,
+                decoration: const InputDecoration(labelText: 'Client Name', border: OutlineInputBorder()),
+                autofocus: true,
+                onSubmitted: (_) => _submit(),
               ),
-              autofocus: true,
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _locationCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Location',
-                hintText: 'e.g., Kenner, LA',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _taxIdCtrl,
+                decoration: const InputDecoration(labelText: 'Tax ID / EIN (optional)', border: OutlineInputBorder()),
               ),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _status,
-              items: _statuses
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _status = v ?? _status),
-              decoration: const InputDecoration(
-                labelText: 'Status',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'Email (optional)', border: OutlineInputBorder()),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone (optional)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _locationCtrl,
+                decoration: const InputDecoration(labelText: 'Location', hintText: 'e.g., Kenner, LA', border: OutlineInputBorder()),
+                onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _status,
+                items: _statuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                onChanged: (v) => setState(() => _status = v ?? _status),
+                decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Create'),
-        ),
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Create')),
       ],
     );
   }
 }
 
-/* =======================
-   UI HELPERS
-======================= */
 class _Chip extends StatelessWidget {
   const _Chip({required this.label});
   final String label;
@@ -343,9 +360,7 @@ class _Chip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.35),
-        ),
+        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.35)),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),
     );

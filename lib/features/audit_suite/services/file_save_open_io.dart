@@ -1,47 +1,56 @@
-// lib/features/audit_suite/services/file_save_open_io.dart
-
-import 'dart:io' show Directory, File;
+import 'dart:io';
 
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
-import '../../../core/utils/doc_path.dart';
-
-class SaveOpenResult {
+class SavedFileResult {
   final String savedPath;
   final String savedFileName;
   final bool didOpenFile;
 
-  const SaveOpenResult({
+  const SavedFileResult({
     required this.savedPath,
     required this.savedFileName,
     required this.didOpenFile,
   });
 }
 
+/// Backwards-compatible alias type (older code expects SaveOpenResult).
+class SaveOpenResult extends SavedFileResult {
+  const SaveOpenResult({
+    required super.savedPath,
+    required super.savedFileName,
+    required super.didOpenFile,
+  });
+}
+
 Future<SaveOpenResult> savePdfBytesAndMaybeOpen({
   required String fileName,
   required List<int> bytes,
-  required String subfolder, // e.g. "Auditron/Packets"
+  required String subfolder,
 }) async {
-  final docsPath = await getDocumentsPath();
-  if (docsPath == null || docsPath.isEmpty) {
-    throw StateError('Documents directory not available.');
-  }
+  final docs = await getApplicationDocumentsDirectory();
 
-  final folder = Directory(p.join(docsPath, subfolder));
+  // subfolder like "Auditron/Letters"
+  final parts = subfolder.split('/').where((s) => s.trim().isNotEmpty).toList();
+  final folder = Directory(p.joinAll([docs.path, ...parts]));
+
   if (!await folder.exists()) {
     await folder.create(recursive: true);
   }
 
   final outPath = p.join(folder.path, fileName);
-  await File(outPath).writeAsBytes(bytes, flush: true);
+  final f = File(outPath);
+  await f.writeAsBytes(bytes, flush: true);
 
   bool opened = false;
   try {
     final res = await OpenFilex.open(outPath);
     opened = (res.type == ResultType.done);
-  } catch (_) {}
+  } catch (_) {
+    opened = false;
+  }
 
   return SaveOpenResult(
     savedPath: outPath,

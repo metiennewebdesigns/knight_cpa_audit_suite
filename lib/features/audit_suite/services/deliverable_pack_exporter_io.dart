@@ -1,15 +1,13 @@
-// lib/features/audit_suite/services/deliverable_pack_exporter_io.dart
-
 import 'dart:convert';
-import 'dart:io' show Directory, File;
+import 'dart:io';
 
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../../core/storage/local_store.dart';
-import '../../../core/utils/doc_path.dart';
 
 import '../data/models/repositories/clients_repository.dart';
 import '../data/models/repositories/engagements_repository.dart';
@@ -38,11 +36,7 @@ class DeliverablePackExporter {
     required LocalStore store,
     required String engagementId,
   }) async {
-    // ✅ Use doc_path.dart (conditional) instead of path_provider directly
-    final docsPath = await getDocumentsPath();
-    if (docsPath == null || docsPath.isEmpty) {
-      throw StateError('Documents directory not available.');
-    }
+    final docs = await getApplicationDocumentsDirectory();
 
     final engRepo = EngagementsRepository(store);
     final clientRepo = ClientsRepository(store);
@@ -54,18 +48,23 @@ class DeliverablePackExporter {
       throw StateError('Engagement not found: $engagementId');
     }
 
+    // Client + address meta
     final client = await clientRepo.getById(eng.clientId);
     final clientName = (client?.name ?? eng.clientId).toString();
-    final clientAddr = ClientMeta.formatSingleLine(
-      await ClientMeta.readAddress(eng.clientId),
-    );
+    final clientAddr = ClientMeta.formatSingleLine(await ClientMeta.readAddress(eng.clientId));
 
+    // ✅ NEW: contact fields from ClientModel
+    final clientTaxId = (client?.taxId ?? '').toString().trim();
+    final clientEmail = (client?.email ?? '').toString().trim();
+    final clientPhone = (client?.phone ?? '').toString().trim();
+
+    // Preparer
     final preparer = await PreparerProfile.read();
     final preparerName = (preparer['name'] ?? 'Independent Auditor').toString();
     final preparerLine2 = (preparer['line2'] ?? '').toString().trim();
 
     // PBC stats (+ overdue)
-    final pbcStats = await _readPbcStats(docsPath, engagementId);
+    final pbcStats = await _readPbcStats(docs.path, engagementId);
     final pbcRequested = pbcStats.requested;
     final pbcReceived = pbcStats.received;
     final pbcReviewed = pbcStats.reviewed;
@@ -84,11 +83,11 @@ class DeliverablePackExporter {
     final riskUpdated = risk.updated.trim();
 
     // Planning complete (from EngagementMeta json)
-    final planningCompleted = await _readPlanningCompleted(docsPath, engagementId);
+    final planningCompleted = await _readPlanningCompleted(docs.path, engagementId);
 
     // Letters generated count (from Letters meta)
     final lettersGenerated = await LetterExporter.getLettersGeneratedCount(
-      docsPath: docsPath,
+      docsPath: docs.path,
       engagementId: engagementId,
     );
 
@@ -100,7 +99,7 @@ class DeliverablePackExporter {
 
     // Portal status + PIN set
     final portalClosed = eng.status.trim().toLowerCase() == 'finalized';
-    final portalPin = await _readClientPortalPinOrEmpty(docsPath, engagementId);
+    final portalPin = await _readClientPortalPinOrEmpty(docs.path, engagementId);
 
     // Readiness score (bundle snapshot)
     final readinessPct = _computeReadinessPercentV2(
@@ -115,6 +114,9 @@ class DeliverablePackExporter {
 
     final readinessSnapshot = _readinessSnapshotText(
       clientName: clientName,
+      clientTaxId: clientTaxId,
+      clientEmail: clientEmail,
+      clientPhone: clientPhone,
       engagementTitle: eng.title,
       engagementId: engagementId,
       engagementStatus: eng.status,
@@ -174,9 +176,7 @@ class DeliverablePackExporter {
     final doc = pw.Document();
     final generatedOn = _todayIso();
 
-    // ✅ MultiPage safe list (not one giant Column)
     final content = <pw.Widget>[
-      // ✅ Readiness Snapshot FIRST
       ..._sectionWidgets('Audit Readiness Snapshot', readinessSnapshot),
 
       pw.Text(
@@ -238,7 +238,16 @@ class DeliverablePackExporter {
                 ),
               ),
             pw.SizedBox(height: 4),
+
+            // ✅ Client block (safe maxLines)
             pw.Text('Client: $clientName', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+            if (clientTaxId.isNotEmpty)
+              pw.Text('Tax ID: $clientTaxId', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+            if (clientEmail.isNotEmpty)
+              pw.Text('Email: $clientEmail', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+            if (clientPhone.isNotEmpty)
+              pw.Text('Phone: $clientPhone', style: const pw.TextStyle(fontSize: 9), maxLines: 1),
+
             if (clientAddr.trim().isNotEmpty)
               pw.Text(
                 'Client Address: $clientAddr',
@@ -268,7 +277,7 @@ class DeliverablePackExporter {
 
     final bytes = await doc.save();
 
-    final outFolder = Directory(p.join(docsPath, 'Auditron', 'Deliverables'));
+    final outFolder = Directory(p.join(docs.path, 'Auditron', 'Deliverables'));
     if (!await outFolder.exists()) {
       await outFolder.create(recursive: true);
     }
@@ -293,7 +302,6 @@ class DeliverablePackExporter {
     );
   }
 
-  // ✅ IMPORTANT: return multiple widgets (not a Column)
   static List<pw.Widget> _sectionWidgets(String title, String text) {
     return [
       pw.Text(title, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
@@ -398,7 +406,6 @@ This is a Phase 1 planning narrative (locked template). Editing and toggles will
     // Risk 20, Planning 20, Workpapers 30, Letters 10, PBC 15, Integrity 5
     final risk = riskCompleted ? 20 : 0;
     final planning = planningCompleted ? 20 : 0;
-
     final wp = totalWorkpapers <= 0 ? 0 : ((completeWorkpapers / totalWorkpapers) * 30).round();
     final letters = lettersGenerated > 0 ? 10 : 0;
     final pbc = (pbcProgress01.clamp(0, 1) * 15).round();
@@ -409,6 +416,9 @@ This is a Phase 1 planning narrative (locked template). Editing and toggles will
 
   static String _readinessSnapshotText({
     required String clientName,
+    required String clientTaxId,
+    required String clientEmail,
+    required String clientPhone,
     required String engagementTitle,
     required String engagementId,
     required String engagementStatus,
@@ -439,14 +449,20 @@ This is a Phase 1 planning narrative (locked template). Editing and toggles will
         ? 'Portal: CLOSED (finalized)'
         : (portalPinSet ? 'Portal: OPEN (PIN active)' : 'Portal: OPEN (PIN not set)');
 
-    final integrityLine = integrityIssues == 0
-        ? 'Evidence Integrity: OK'
-        : 'Evidence Integrity: ISSUES ($integrityIssues)';
+    final integrityLine =
+        integrityIssues == 0 ? 'Evidence Integrity: OK' : 'Evidence Integrity: ISSUES ($integrityIssues)';
+
+    final contactLines = <String>[];
+    if (clientTaxId.trim().isNotEmpty) contactLines.add('Tax ID: ${clientTaxId.trim()}');
+    if (clientEmail.trim().isNotEmpty) contactLines.add('Email: ${clientEmail.trim()}');
+    if (clientPhone.trim().isNotEmpty) contactLines.add('Phone: ${clientPhone.trim()}');
+
+    final contactBlock = contactLines.isEmpty ? '' : '\n' + contactLines.join('\n');
 
     return '''
 Audit Readiness Snapshot (Phase 1)
 
-Client: $clientName
+Client: $clientName$contactBlock
 Engagement: $engagementTitle
 Engagement ID: $engagementId
 Status: $status
@@ -553,7 +569,6 @@ Readiness is a Phase 1 heuristic based on risk assessment completion, planning c
         if (s == 'received') received++;
         if (s == 'reviewed') reviewed++;
 
-        // overdue: requested for 7+ days
         if (s == 'requested') {
           final requestedAt = (it['requestedAt'] ?? '').toString().trim();
           final dt = DateTime.tryParse(requestedAt);

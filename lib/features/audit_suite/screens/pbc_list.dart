@@ -15,6 +15,7 @@ import '../services/preparer_profile.dart';
 import '../services/client_meta.dart';
 import '../services/evidence_ledger.dart';
 import '../services/pbc_store.dart';
+import '../services/pbc_pdf_exporter.dart';
 
 class PbcListScreen extends StatefulWidget {
   const PbcListScreen({
@@ -134,7 +135,9 @@ class _PbcItem {
       attachmentName: (j['attachmentName'] ?? '').toString(),
       attachmentPath: (j['attachmentPath'] ?? '').toString(),
       attachmentSha256: (j['attachmentSha256'] ?? '').toString(),
-      attachmentBytes: (j['attachmentBytes'] is int) ? (j['attachmentBytes'] as int) : int.tryParse('${j['attachmentBytes'] ?? 0}') ?? 0,
+      attachmentBytes: (j['attachmentBytes'] is int)
+          ? (j['attachmentBytes'] as int)
+          : int.tryParse('${j['attachmentBytes'] ?? 0}') ?? 0,
     );
   }
 }
@@ -166,6 +169,11 @@ class _PbcListScreenState extends State<PbcListScreen> {
     _engRepo = EngagementsRepository(widget.store);
     _clientsRepo = ClientsRepository(widget.store);
     _init();
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _init() async {
@@ -202,17 +210,18 @@ class _PbcListScreenState extends State<PbcListScreen> {
   List<_PbcItem> get _filtered => _filter == null ? _items : _items.where((i) => i.status == _filter).toList();
   int _count(_PbcStatus s) => _items.where((i) => i.status == s).length;
 
-  DateTime? _parseAnyIso(String s) => DateTime.tryParse(s.trim());
-  int _daysSince(String iso) => _parseAnyIso(iso) == null ? 0 : DateTime.now().difference(_parseAnyIso(iso)!).inDays;
+  int _daysSince(String iso) {
+    final dt = DateTime.tryParse(iso.trim());
+    if (dt == null) return 0;
+    return DateTime.now().difference(dt).inDays;
+  }
 
   bool _isOverdue(_PbcItem item) => item.status == _PbcStatus.requested && _daysSince(item.requestedAt) >= _overdueDays;
   int _overdueCount() => _items.where(_isOverdue).length;
 
   Future<_PbcItem> _attachEvidence(_PbcItem item) async {
     if (!_canFile) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Evidence attach is disabled on web demo.')));
-      }
+      _snack('Evidence attach is disabled on web demo.');
       return item;
     }
 
@@ -331,33 +340,6 @@ class _PbcListScreenState extends State<PbcListScreen> {
     await _persist();
   }
 
-  String _singleItemReminderText(_PbcItem item) {
-    final who = _clientName.isEmpty ? 'Team' : _clientName;
-    final days = _daysSince(item.requestedAt);
-
-    return '''
-Subject: PBC Reminder – ${widget.engagementId}
-
-Hello $who,
-
-This is a friendly reminder for the following outstanding PBC item (requested ${days} day(s) ago):
-
-• ${item.title}
-
-If the item is unavailable, please reply with an expected delivery date.
-
-Thank you,
-$_preparerName
-Powered by Auditron
-''';
-  }
-
-  Future<void> _copyReminderForItem(_PbcItem item) async {
-    await Clipboard.setData(ClipboardData(text: _singleItemReminderText(item)));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reminder copied ✅')));
-  }
-
   Future<void> _copyEmailText() async {
     final requested = _items.where((i) => i.status == _PbcStatus.requested).toList();
     final lines = requested.isEmpty ? 'All PBC items are currently received/reviewed.' : requested.map((i) => '• ${i.title}').join('\n');
@@ -377,8 +359,36 @@ Powered by Auditron
 ''';
 
     await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email request text copied ✅')));
+    _snack('Email request text copied ✅');
+  }
+
+  Future<void> _exportPbcPdf() async {
+    if (_busy) return;
+
+    if (!_canFile) {
+      _snack('PBC PDF export is disabled on web demo.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final itemsRaw = _items.map((e) => e.toJson()).toList();
+
+      final res = await PbcPdfExporter.export(
+        engagementId: widget.engagementId,
+        clientName: _clientName,
+        clientAddressLine: _clientAddressLine,
+        preparerName: _preparerName,
+        preparerLine2: _preparerLine2,
+        itemsRaw: itemsRaw,
+      );
+
+      _snack(res.didOpenFile ? 'Exported + opened ${res.savedFileName} ✅' : 'Exported ${res.savedFileName} ✅');
+    } catch (e) {
+      _snack('Export failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -405,6 +415,11 @@ Powered by Auditron
               onPressed: _busy ? null : _copyEmailText,
               icon: const Icon(Icons.content_copy),
             ),
+            IconButton(
+              tooltip: _canFile ? 'Export PDF' : 'Disabled on web',
+              onPressed: _busy ? null : _exportPbcPdf,
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+            ),
           ],
         ),
         body: _busy
@@ -418,7 +433,7 @@ Powered by Auditron
                       child: const ListTile(
                         leading: Icon(Icons.public),
                         title: Text('Web demo mode'),
-                        subtitle: Text('PBC local storage & evidence attach are disabled on web.'),
+                        subtitle: Text('PBC local storage, evidence attach, and PDF export are disabled on web.'),
                       ),
                     ),
                   if (!_canFile) const SizedBox(height: 12),
@@ -461,7 +476,10 @@ Powered by Auditron
                           overdueDays: _daysSince(i.requestedAt),
                           isOverdue: _isOverdue(i),
                           canAttachEvidence: _canFile,
-                          onCopyReminder: () => _copyReminderForItem(i),
+                          onCopyReminder: () async {
+                            await Clipboard.setData(ClipboardData(text: _singleItemReminderText(i)));
+                            _snack('Reminder copied ✅');
+                          },
                           onRequested: () => _setStatus(i, _PbcStatus.requested),
                           onReceived: () => _setStatus(i, _PbcStatus.received),
                           onReviewed: () => _setStatus(i, _PbcStatus.reviewed),
@@ -474,9 +492,30 @@ Powered by Auditron
       ),
     );
   }
+
+  String _singleItemReminderText(_PbcItem item) {
+    final who = _clientName.isEmpty ? 'Team' : _clientName;
+    final days = _daysSince(item.requestedAt);
+
+    return '''
+Subject: PBC Reminder – ${widget.engagementId}
+
+Hello $who,
+
+This is a friendly reminder for the following outstanding PBC item (requested ${days} day(s) ago):
+
+• ${item.title}
+
+If the item is unavailable, please reply with an expected delivery date.
+
+Thank you,
+$_preparerName
+Powered by Auditron
+''';
+  }
 }
 
-/* ===================== UI ===================== */
+/* ===================== UI bits ===================== */
 
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({required this.title, required this.subtitle, required this.right});

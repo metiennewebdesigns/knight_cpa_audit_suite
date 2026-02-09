@@ -31,16 +31,27 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
   bool _busy = false;
   bool _changed = false;
 
-  // Editor (minimal + safe)
+  // Editors
   final _nameCtrl = TextEditingController();
+  final _taxIdCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
 
   ClientModel? _loaded;
   bool _seeded = false;
+
+  // Seeds for dirty tracking
   String _seedName = '';
+  String _seedTaxId = '';
+  String _seedEmail = '';
+  String _seedPhone = '';
 
   bool get _isDirty {
     if (!_seeded || _loaded == null) return false;
-    return _nameCtrl.text.trim() != _seedName;
+    return _nameCtrl.text.trim() != _seedName ||
+        _taxIdCtrl.text.trim() != _seedTaxId ||
+        _emailCtrl.text.trim() != _seedEmail ||
+        _phoneCtrl.text.trim() != _seedPhone;
   }
 
   @override
@@ -49,16 +60,42 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
     _clientsRepo = ClientsRepository(widget.store);
     _future = _load();
 
-    _nameCtrl.addListener(() {
+    void listen() {
       if (!_seeded) return;
       if (mounted) setState(() {});
-    });
+    }
+
+    _nameCtrl.addListener(listen);
+    _taxIdCtrl.addListener(listen);
+    _emailCtrl.addListener(listen);
+    _phoneCtrl.addListener(listen);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _taxIdCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
+  }
+
+  void _seedFrom(ClientModel c) {
+    _seeded = false;
+
+    _loaded = c;
+
+    _seedName = c.name.trim();
+    _seedTaxId = c.taxId.trim();
+    _seedEmail = c.email.trim();
+    _seedPhone = c.phone.trim();
+
+    _nameCtrl.text = _seedName;
+    _taxIdCtrl.text = _seedTaxId;
+    _emailCtrl.text = _seedEmail;
+    _phoneCtrl.text = _seedPhone;
+
+    _seeded = true;
   }
 
   Future<_Vm> _load() async {
@@ -66,13 +103,8 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
     if (c == null) {
       throw StateError('Client not found: ${widget.clientId}');
     }
-    _loaded = c;
 
-    _seeded = false;
-    _seedName = c.name.trim();
-    _nameCtrl.text = _seedName;
-    _seeded = true;
-
+    _seedFrom(c);
     return _Vm(client: c);
   }
 
@@ -132,17 +164,15 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
       final saved = await _clientsRepo.upsert(
         base.copyWith(
           name: name,
+          taxId: _taxIdCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+          phone: _phoneCtrl.text.trim(),
           updated: '', // repo usually sets this
         ),
       );
 
-      _loaded = saved;
       _changed = true;
-
-      _seeded = false;
-      _seedName = saved.name.trim();
-      _nameCtrl.text = _seedName;
-      _seeded = true;
+      _seedFrom(saved);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -252,6 +282,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                                 ),
                           ),
                           const SizedBox(height: 12),
+
                           Text('Name', style: Theme.of(context).textTheme.labelLarge),
                           const SizedBox(height: 8),
                           TextField(
@@ -261,6 +292,42 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                               hintText: 'Enter client name',
                             ),
                           ),
+
+                          const SizedBox(height: 12),
+                          Text('Tax ID / EIN', style: Theme.of(context).textTheme.labelLarge),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _taxIdCtrl,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              hintText: 'Optional',
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+                          Text('Email', style: Theme.of(context).textTheme.labelLarge),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              hintText: 'Optional',
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+                          Text('Phone', style: Theme.of(context).textTheme.labelLarge),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _phoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              hintText: 'Optional',
+                            ),
+                          ),
+
                           const SizedBox(height: 14),
                           FilledButton.icon(
                             onPressed: (_busy || !_isDirty) ? null : _save,

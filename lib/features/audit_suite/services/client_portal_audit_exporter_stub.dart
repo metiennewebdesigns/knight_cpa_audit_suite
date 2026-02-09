@@ -1,7 +1,3 @@
-// lib/features/audit_suite/services/client_portal_audit_exporter_stub.dart
-//
-// Web implementation: exporting to local Documents is disabled.
-
 import '../../../core/storage/local_store.dart';
 
 class ClientPortalAuditExportResult {
@@ -17,12 +13,10 @@ class ClientPortalAuditExportResult {
 }
 
 class ClientPortalAuditExporter {
-  static const String reportVersion = '1.0';
-
   static Future<ClientPortalAuditExportResult> exportPdf({
     required LocalStore store,
     required String engagementId,
   }) async {
-    throw UnsupportedError('Client Portal Audit Trail export is disabled on web demo.');
+    throw UnsupportedError('Client Portal Audit Trail export is not supported in the web demo.');
   }
 }

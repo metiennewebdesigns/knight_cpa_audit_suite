@@ -1,15 +1,22 @@
-Future<void> ensureDir(String path) async {
-  throw UnsupportedError('File features are disabled on web demo.');
-}
-
+// Web stub – NO dart:io imports here.
 Future<bool> fileExists(String path) async => false;
 
+Future<void> ensureDir(String dirPath) async {
+  throw UnsupportedError('File system not supported on web');
+}
+
 Future<String> readTextFile(String path) async {
-  throw UnsupportedError('File features are disabled on web demo.');
+  throw UnsupportedError('File system not supported on web');
 }
 
-Future<void> writeTextFile(String path, String contents) async {
-  throw UnsupportedError('File features are disabled on web demo.');
+Future<void> writeTextFile(String path, String text) async {
+  throw UnsupportedError('File system not supported on web');
 }
 
-Future<List<String>> readLines(String path) async => const <String>[];
+Future<List<String>> readLines(String path) async {
+  throw UnsupportedError('File system not supported on web');
+}
+
+Future<List<String>> listFiles(String folderPath) async => const <String>[];
+
+Future<String> modifiedIso(String filePath) async => '';
