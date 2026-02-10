@@ -300,7 +300,7 @@ class _EngagementDetailScreenState extends State<EngagementDetailScreen> {
                           ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
-                            value: _status,
+                            initialValue: _status,
                             items: _statusOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                             onChanged: (v) => setState(() => _status = v ?? _status),
                             decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Status'),

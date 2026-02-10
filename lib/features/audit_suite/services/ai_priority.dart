@@ -99,8 +99,9 @@ class AiPriorityScorer {
     if (score > 100) score = 100;
 
     String label;
-    if (score >= 90) label = 'Critical';
-    else if (score >= 70) label = 'High';
+    if (score >= 90) {
+      label = 'Critical';
+    } else if (score >= 70) label = 'High';
     else if (score >= 40) label = 'Medium';
     else label = 'Low';
 

@@ -2,6 +2,7 @@
 /// - Represents a single file attached to a workpaper.
 /// - This is metadata only (name, size, storedPath, etc).
 /// - The actual file copy/move is handled by your repository/storage layer.
+library;
 
 class WorkpaperAttachmentModel {
   final String id; // unique id for attachment

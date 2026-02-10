@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -16,6 +15,7 @@ import '../services/client_meta.dart';
 import '../services/evidence_ledger.dart';
 import '../services/pbc_store.dart';
 import '../services/pbc_pdf_exporter.dart';
+
 
 class PbcListScreen extends StatefulWidget {
   const PbcListScreen({
@@ -429,7 +429,7 @@ Powered by Auditron
                 children: [
                   if (!_canFile)
                     Card(
-                      color: cs.surfaceVariant,
+                      color: cs.surfaceContainerHighest,
                       child: const ListTile(
                         leading: Icon(Icons.public),
                         title: Text('Web demo mode'),
@@ -502,7 +502,7 @@ Subject: PBC Reminder – ${widget.engagementId}
 
 Hello $who,
 
-This is a friendly reminder for the following outstanding PBC item (requested ${days} day(s) ago):
+This is a friendly reminder for the following outstanding PBC item (requested $days day(s) ago):
 
 • ${item.title}
 
@@ -588,7 +588,7 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? cs.primary.withOpacity(0.18) : cs.surfaceVariant,
+      color: selected ? cs.primary.withOpacity(0.18) : cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
@@ -650,7 +650,7 @@ class _PbcRow extends StatelessWidget {
     final hasAttachment = item.attachmentPath.trim().isNotEmpty && item.attachmentSha256.trim().isNotEmpty;
 
     return Material(
-      color: cs.surfaceVariant,
+      color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.all(14),

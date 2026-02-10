@@ -219,7 +219,7 @@ class _PreRiskAssessmentScreenState extends State<PreRiskAssessmentScreen> {
                   _SectionCard(
                     title: 'Overall risk rating',
                     child: DropdownButtonFormField<String>(
-                      value: _overallRisk,
+                      initialValue: _overallRisk,
                       items: _riskLevels
                           .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                           .toList(),

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../core/storage/local_store.dart';
 
@@ -8,6 +11,9 @@ import '../data/models/repositories/clients_repository.dart';
 import '../data/models/repositories/engagements_repository.dart';
 import '../data/models/repositories/workpapers_repository.dart';
 import '../data/models/repositories/risk_assessments_repository.dart';
+
+// ✅ FS facade (web-safe) so we can read letter meta on desktop without breaking web.
+import '../services/engagement_detail_fs.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -23,7 +29,7 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-enum ActivityType { workpaper, engagement, risk }
+enum ActivityType { workpaper, engagement, risk, letter }
 enum _DashFilter { all, atRisk, needsAttention, healthy, finalized }
 enum _HealthTone { healthy, attention, risk, finalized, unknown }
 
@@ -36,6 +42,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Future<_Vm> _future;
   bool _busy = false;
   _DashFilter _filter = _DashFilter.all;
+
+  bool get _canFile => !kIsWeb && widget.store.canUseFileSystem && (widget.store.documentsPath ?? '').trim().isNotEmpty;
+  String get _docsPath => widget.store.documentsPath ?? '';
 
   @override
   void initState() {
@@ -78,6 +87,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
         break;
 
+      case ActivityType.letter:
+        if ((a.engagementId ?? '').isNotEmpty) {
+          final t = (a.letterType ?? '').trim();
+          if (t.isNotEmpty) {
+            context.pushNamed(
+              'letterPreview',
+              pathParameters: {'id': a.engagementId!, 'type': t},
+            );
+          } else {
+            context.pushNamed('lettersHub', pathParameters: {'id': a.engagementId!});
+          }
+        }
+        break;
+
       case ActivityType.engagement:
       case ActivityType.risk:
         if ((a.engagementId ?? '').isNotEmpty) {
@@ -102,8 +125,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  // ===================== LETTER ACTIVITY (Step 3B + 3C) =====================
+
+  Future<List<_ActivityItem>> _readLetterActivityForEngagement(String engagementId) async {
+    if (!_canFile) return const <_ActivityItem>[];
+
+    final fp = p.join(_docsPath, 'Auditron', 'Letters', '_meta', '$engagementId.json');
+    try {
+      if (!await fileExists(fp)) return const <_ActivityItem>[];
+
+      final raw = await readTextFile(fp);
+      if (raw.trim().isEmpty) return const <_ActivityItem>[];
+
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final exports = (data['exports'] as List<dynamic>?) ?? const <dynamic>[];
+      if (exports.isEmpty) return const <_ActivityItem>[];
+
+      final out = <_ActivityItem>[];
+      for (final e in exports) {
+        if (e is! Map) continue;
+
+        final createdAt = (e['createdAt'] ?? '').toString().trim();
+        if (createdAt.isEmpty) continue;
+
+        final type = (e['type'] ?? '').toString().trim(); // engagement / pbc / mrl
+        final fileName = (e['fileName'] ?? '').toString().trim();
+
+        final title = type.isEmpty ? 'Letter exported' : 'Letter exported (${type.toUpperCase()})';
+        final subtitle = fileName.isEmpty ? 'Engagement $engagementId' : fileName;
+
+        out.add(
+          _ActivityItem(
+            type: ActivityType.letter,
+            title: title,
+            subtitle: subtitle,
+            when: _parseIso(createdAt),
+            engagementId: engagementId,
+            letterType: type.isEmpty ? null : type,
+          ),
+        );
+      }
+
+      return out;
+    } catch (_) {
+      return const <_ActivityItem>[];
+    }
+  }
+
   Future<_Vm> _load() async {
-    // ✅ Web-safe: no filesystem calls anywhere in this dashboard.
+    // ✅ Web-safe by default; file-backed features (like letter meta) are gated by _canFile.
     final clients = await _clientsRepo.getClients();
     final engagements = await _engRepo.getEngagements();
     final workpapers = await _wpRepo.getWorkpapers();
@@ -115,13 +185,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Group workpapers by engagement
     final wpByEng = <String, List<dynamic>>{};
     for (final wp in workpapers) {
-      final eid = (wp.engagementId as String);
+      final eid = wp.engagementId;
       (wpByEng[eid] ??= <dynamic>[]).add(wp);
     }
 
     // Sort engagements by updated desc (fallback to empty string if null)
-    final sortedEngagements = [...engagements]
-      ..sort((a, b) => ((b.updated ?? '') as String).compareTo((a.updated ?? '') as String));
+    final sortedEngagements = [...engagements]..sort((a, b) => ((b.updated ?? '')).compareTo((a.updated ?? '')));
     final recentEngagements = sortedEngagements.take(8).toList();
 
     int atRisk = 0;
@@ -215,7 +284,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       lowestReadiness.sort((a, b) => a.pct.compareTo(b.pct));
       if (lowestReadiness.length > 3) lowestReadiness.removeLast();
 
-      final upd = ((e.updated ?? '') as String).trim();
+      final upd = ((e.updated ?? '')).trim();
       if (upd.isNotEmpty) {
         activity.add(
           _ActivityItem(
@@ -228,6 +297,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }
 
+      // ✅ Step 3B/3C: Letter activity (desktop only; safe on web)
+      if (_canFile) {
+        final letters = await _readLetterActivityForEngagement(id);
+        activity.addAll(letters);
+      }
+
       // Only build cards for recent engagements
       final isRecent = recentEngagements.any((r) => r.id == id);
       if (isRecent) {
@@ -237,9 +312,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             title: title,
             clientName: clientName,
             status: status,
-            updated: (e.updated ?? '') as String,
+            updated: (e.updated ?? ''),
             riskLevel: riskLevel,
-            lettersGenerated: 0, // keep field, web-safe placeholder
+            lettersGenerated: 0, // keeping your placeholder field
             openWorkpapers: openWps,
             totalWorkpapers: totalWps,
             healthLabel: healthRes.label,
@@ -252,7 +327,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Workpaper activity
     for (final wp in workpapers) {
-      final upd = ((wp.updated ?? '') as String).trim();
+      final upd = ((wp.updated ?? '')).trim();
       if (upd.isEmpty) continue;
       activity.add(
         _ActivityItem(
@@ -271,7 +346,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final avgReadiness = readinessCount == 0 ? 0 : (readinessSum / readinessCount).round();
 
-    // ✅ placeholders for future sections (PBC + integrity) to keep the VM stable
     return _Vm(
       clients: clients.length,
       engagements: engagements.length,
@@ -357,9 +431,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: const ListTile(
                       leading: Icon(Icons.public),
                       title: Text('Web demo mode'),
-                      subtitle: Text(
-                        'Exports/logs that require a local Documents folder are disabled on web.',
-                      ),
+                      subtitle: Text('Exports/logs that require a local Documents folder are disabled on web.'),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -457,9 +529,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             border: cs.secondary.withValues(alpha: 0.40),
                           ),
                           _TinyPill(
-                            text: vm.lowestReadiness.isEmpty
-                                ? 'Lowest: —'
-                                : 'Lowest: ${vm.lowestReadiness.first.pct}%',
+                            text: vm.lowestReadiness.isEmpty ? 'Lowest: —' : 'Lowest: ${vm.lowestReadiness.first.pct}%',
                             bg: cs.tertiaryContainer,
                             border: cs.tertiary.withValues(alpha: 0.40),
                           ),
@@ -559,9 +629,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         childrenPadding: const EdgeInsets.only(top: 10),
                         title: Text(
                           '${vm.activity.length} items • latest ${_prettyWhen(vm.activity.first.when)}',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         trailing: const Icon(Icons.expand_more),
                         children: [
@@ -571,10 +639,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               onTap: () => _onActivityTap(vm.activity[i]),
                             ),
                             if (i != vm.activity.length - 1)
-                              Divider(
-                                height: 16,
-                                color: cs.onSurface.withValues(alpha: 0.08),
-                              ),
+                              Divider(height: 16, color: cs.onSurface.withValues(alpha: 0.08)),
                           ],
                         ],
                       ),
@@ -601,10 +666,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             onTap: () => _openEngagement(filteredRecent[i].id),
                           ),
                           if (i != filteredRecent.length - 1)
-                            Divider(
-                              height: 16,
-                              color: cs.onSurface.withValues(alpha: 0.08),
-                            ),
+                            Divider(height: 16, color: cs.onSurface.withValues(alpha: 0.08)),
                         ],
                       ],
                     ),
@@ -617,6 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
+
 // ===================== VIEW MODELS =====================
 
 class _Vm {
@@ -803,17 +866,14 @@ _HealthResult _computeHealth({
 
   final r = riskLevel.trim().toLowerCase();
 
-  // Conservative: high risk or too many open workpapers => at risk
   if (r.contains('high') || r.contains('severe') || openWorkpapers >= 12) {
     return const _HealthResult('At Risk', _HealthTone.risk);
   }
 
-  // Medium risk or some open workpapers => needs attention
   if (r.contains('medium') || r.contains('moderate') || openWorkpapers >= 5) {
     return const _HealthResult('Needs Attention', _HealthTone.attention);
   }
 
-  // Low risk & low open => healthy
   if (r.contains('low') || r.isEmpty || r == '—') {
     if (openWorkpapers <= 4) {
       return const _HealthResult('Healthy', _HealthTone.healthy);
@@ -834,17 +894,9 @@ int _computeReadinessPercentWebSafe({
     return 100;
   }
 
-  // Weighting:
-  // - Risk completion: 40%
-  // - Workpaper completion: 60%
   final riskScore = riskCompleted ? 40 : 0;
-
-  final wpPct = (totalWorkpapers <= 0)
-      ? 0
-      : ((completeWorkpapers / totalWorkpapers) * 60).round();
-
-  final total = (riskScore + wpPct).clamp(0, 100);
-  return total;
+  final wpPct = (totalWorkpapers <= 0) ? 0 : ((completeWorkpapers / totalWorkpapers) * 60).round();
+  return (riskScore + wpPct).clamp(0, 100);
 }
 
 // ===================== UI WIDGETS =====================
@@ -964,21 +1016,9 @@ class _KpiCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    label,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
-                  ),
+                  Text(label, style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
-                  Text(
-                    value,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w900),
-                  ),
+                  Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
                 ],
               ),
             ],
@@ -1011,10 +1051,7 @@ class _TinyPill extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .labelMedium
-            ?.copyWith(fontWeight: FontWeight.w900),
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w900),
       ),
     );
   }
@@ -1040,19 +1077,11 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w900),
-            ),
+            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
             Text(
               subtitle,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurface.withValues(alpha: 0.70),
-                  ),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.70)),
             ),
             const SizedBox(height: 12),
             child,
@@ -1090,12 +1119,7 @@ class _FilterChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: border),
         ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-        ),
+        child: Text(label, style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w900)),
       ),
     );
   }
@@ -1125,13 +1149,7 @@ class _InfoCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
-                  ),
+                  Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
                   const SizedBox(height: 6),
                   Text(body, style: Theme.of(context).textTheme.bodySmall),
                 ],
@@ -1186,6 +1204,8 @@ class _ActivityRow extends StatelessWidget {
         return Icons.work_outline;
       case ActivityType.risk:
         return Icons.shield_outlined;
+      case ActivityType.letter:
+        return Icons.mail_outline;
     }
   }
 
@@ -1208,17 +1228,13 @@ class _ActivityRow extends StatelessWidget {
         item.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w900),
       ),
       subtitle: Text(
         '${item.subtitle} • ${_prettyWhen(item.when)}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurface.withValues(alpha: 0.70),
-            ),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.70)),
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
@@ -1273,9 +1289,7 @@ class _RecentEngagementRow extends StatelessWidget {
         '${vm.clientName} • ${vm.healthLabel} • Risk ${vm.riskLevel} • Ready ${vm.readinessPct}%',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurface.withValues(alpha: 0.70),
-            ),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withValues(alpha: 0.70)),
       ),
       trailing: _TinyPill(
         text: '${vm.readinessPct}%',

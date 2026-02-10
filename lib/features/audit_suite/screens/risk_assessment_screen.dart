@@ -381,7 +381,7 @@ class _RiskAssessmentScreenState extends State<RiskAssessmentScreen> {
                                   children: [
                                     Expanded(
                                       child: DropdownButtonFormField<String>(
-                                        value: _levelOptions.contains(it.level)
+                                        initialValue: _levelOptions.contains(it.level)
                                             ? it.level
                                             : 'Low',
                                         items: _levelOptions
@@ -402,7 +402,7 @@ class _RiskAssessmentScreenState extends State<RiskAssessmentScreen> {
                                     SizedBox(
                                       width: 140,
                                       child: DropdownButtonFormField<int>(
-                                        value: it.score1to5.clamp(1, 5),
+                                        initialValue: it.score1to5.clamp(1, 5),
                                         items: const [1, 2, 3, 4, 5]
                                             .map((v) => DropdownMenuItem(
                                                   value: v,

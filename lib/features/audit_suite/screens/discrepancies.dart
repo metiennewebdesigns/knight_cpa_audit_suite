@@ -5,6 +5,7 @@ import '../../../core/storage/local_store.dart';
 import '../data/models/discrepancy_model.dart';
 import '../data/models/repositories/discrepancies_repository.dart';
 
+
 class DiscrepanciesScreen extends StatefulWidget {
   const DiscrepanciesScreen({
     super.key,
@@ -128,12 +129,12 @@ class _DiscrepanciesScreenState extends State<DiscrepanciesScreen> {
                     children: [
                       _Pill(
                         text: '${open.length} open',
-                        bg: cs.surfaceVariant,
+                        bg: cs.surfaceContainerHighest,
                         border: cs.onSurface.withOpacity(0.10),
                       ),
                       _Pill(
                         text: '\$${total.toStringAsFixed(2)} total',
-                        bg: cs.surfaceVariant,
+                        bg: cs.surfaceContainerHighest,
                         border: cs.onSurface.withOpacity(0.10),
                       ),
                     ],
@@ -160,7 +161,7 @@ class _DiscrepanciesScreenState extends State<DiscrepanciesScreen> {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Material(
-                      color: cs.surfaceVariant,
+                      color: cs.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(16),
                       child: Padding(
                         padding: const EdgeInsets.all(14),
@@ -214,7 +215,7 @@ class _DiscrepanciesScreenState extends State<DiscrepanciesScreen> {
                               children: [
                                 Expanded(
                                   child: DropdownButtonFormField<String>(
-                                    value: d.assignedTo.isEmpty ? null : d.assignedTo,
+                                    initialValue: d.assignedTo.isEmpty ? null : d.assignedTo,
                                     decoration: const InputDecoration(
                                       border: OutlineInputBorder(),
                                       labelText: 'Assigned to',
@@ -356,7 +357,7 @@ class _CreateDiscrepancyDialogState extends State<_CreateDiscrepancyDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _assignedTo.isEmpty ? null : _assignedTo,
+                initialValue: _assignedTo.isEmpty ? null : _assignedTo,
                 decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Assign to'),
                 items: const [
                   DropdownMenuItem(value: '', child: Text('Unassigned')),

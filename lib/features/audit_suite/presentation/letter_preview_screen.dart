@@ -111,7 +111,7 @@ class _LetterPreviewScreenState extends State<LetterPreviewScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _type,
+                    initialValue: _type,
                     decoration: const InputDecoration(
                       labelText: 'Letter type',
                       border: OutlineInputBorder(),

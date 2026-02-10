@@ -204,7 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<AppRole>(
-                    value: _role,
+                    initialValue: _role,
                     items: AppRole.values
                         .map((r) => DropdownMenuItem(value: r, child: Text(AccessControl.roleLabel(r))))
                         .toList(),

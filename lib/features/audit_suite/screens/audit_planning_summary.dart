@@ -18,6 +18,7 @@ import '../services/client_meta.dart';
 import '../services/file_save_open.dart';
 import '../services/engagement_detail_fs.dart';
 
+
 class AuditPlanningSummaryScreen extends StatefulWidget {
   const AuditPlanningSummaryScreen({
     super.key,
@@ -105,7 +106,7 @@ class _AuditPlanningSummaryScreenState extends State<AuditPlanningSummaryScreen>
     if (email.trim().isNotEmpty) contactLines.add('Email: ${email.trim()}');
     if (phone.trim().isNotEmpty) contactLines.add('Phone: ${phone.trim()}');
 
-    final contactBlock = contactLines.isEmpty ? '' : '\n' + contactLines.join('\n');
+    final contactBlock = contactLines.isEmpty ? '' : '\n${contactLines.join('\n')}';
 
     return '''
 Audit Planning Summary
@@ -380,7 +381,7 @@ This document is generated as a Phase 1 planning narrative (locked template). Ed
               children: [
                 if (!_canFile)
                   Card(
-                    color: cs.surfaceVariant,
+                    color: cs.surfaceContainerHighest,
                     child: const ListTile(
                       leading: Icon(Icons.public),
                       title: Text('Web demo mode'),

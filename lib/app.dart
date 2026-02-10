@@ -133,7 +133,7 @@ class App extends StatelessWidget {
         elevation: 0,
         backgroundColor: Colors.white,
         indicatorColor: cs.primary.withOpacity(0.10),
-        labelTextStyle: MaterialStateProperty.all(
+        labelTextStyle: WidgetStateProperty.all(
           const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
         ),
       ),
@@ -240,7 +240,7 @@ class App extends StatelessWidget {
         elevation: 0,
         backgroundColor: const Color(0xFF0B0F1B),
         indicatorColor: cs.primary.withOpacity(0.18),
-        labelTextStyle: MaterialStateProperty.all(
+        labelTextStyle: WidgetStateProperty.all(
           const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
         ),
       ),

@@ -68,7 +68,7 @@ class EngagementModel {
   }
 
   factory EngagementModel.fromJson(Map<String, dynamic> json) {
-    int _int(dynamic v) {
+    int asInt(dynamic v) {
       if (v is int) return v;
       if (v is num) return v.toInt();
       return int.tryParse('$v') ?? 0;
@@ -81,7 +81,7 @@ class EngagementModel {
       status: (json['status'] ?? 'Open').toString(),
       updated: (json['updated'] ?? '').toString(),
       aiPriorityLabel: (json['aiPriorityLabel'] ?? '').toString(),
-      aiPriorityScore: _int(json['aiPriorityScore']),
+      aiPriorityScore: asInt(json['aiPriorityScore']),
       aiPriorityReason: (json['aiPriorityReason'] ?? '').toString(),
       aiPriorityUpdatedAt: (json['aiPriorityUpdatedAt'] ?? '').toString(),
     );

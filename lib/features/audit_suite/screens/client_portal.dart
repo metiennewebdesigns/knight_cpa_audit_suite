@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
@@ -319,7 +318,7 @@ Thank you,
     final portalClosedPill = _portalClosed
         ? _Pill(
             text: 'PORTAL CLOSED',
-            bg: cs.surfaceVariant,
+            bg: cs.surfaceContainerHighest,
             border: cs.onSurface.withOpacity(0.12),
           )
         : null;
@@ -512,7 +511,7 @@ class _UnlockedPortal extends StatelessWidget {
 
         if (!uploadsEnabled)
           Card(
-            color: cs.surfaceVariant,
+            color: cs.surfaceContainerHighest,
             child: const ListTile(
               leading: Icon(Icons.public),
               title: Text('Web demo mode'),
@@ -551,7 +550,7 @@ class _UnlockedPortal extends StatelessWidget {
                     final isReceived = s == 'received';
                     final isReviewed = s == 'reviewed';
 
-                    Color bg = cs.surfaceVariant;
+                    Color bg = cs.surfaceContainerHighest;
                     Color border = cs.onSurface.withOpacity(0.10);
                     String chip = 'Requested';
 
@@ -565,7 +564,7 @@ class _UnlockedPortal extends StatelessWidget {
                       border = cs.tertiary.withOpacity(0.35);
                     } else if (isRequested) {
                       chip = it.isOverdue ? 'Overdue' : 'Requested';
-                      bg = it.isOverdue ? cs.errorContainer : cs.surfaceVariant;
+                      bg = it.isOverdue ? cs.errorContainer : cs.surfaceContainerHighest;
                       border = it.isOverdue ? cs.error.withOpacity(0.35) : cs.onSurface.withOpacity(0.10);
                     }
 
@@ -574,7 +573,7 @@ class _UnlockedPortal extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: cs.surfaceVariant,
+                          color: cs.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: cs.onSurface.withOpacity(0.08)),
                         ),
@@ -668,7 +667,7 @@ class _UnlockedPortal extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: cs.surfaceVariant,
+                          color: cs.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: cs.onSurface.withOpacity(0.08)),
                         ),
@@ -767,20 +766,20 @@ class _InstructionsCard extends StatelessWidget {
               children: [
                 _Pill(
                   text: 'Due: $dueDate',
-                  bg: cs.surfaceVariant,
+                  bg: cs.surfaceContainerHighest,
                   border: cs.onSurface.withOpacity(0.10),
                 ),
                 if (overduePill != null) overduePill!,
                 if (portalClosedPill != null) portalClosedPill!,
                 _Pill(
                   text: pinConfigured ? (unlocked ? 'Unlocked' : 'Locked') : 'PIN not set',
-                  bg: cs.surfaceVariant,
+                  bg: cs.surfaceContainerHighest,
                   border: cs.onSurface.withOpacity(0.10),
                 ),
                 if (!uploadsEnabled)
                   _Pill(
                     text: 'Uploads disabled',
-                    bg: cs.surfaceVariant,
+                    bg: cs.surfaceContainerHighest,
                     border: cs.onSurface.withOpacity(0.10),
                   ),
               ],

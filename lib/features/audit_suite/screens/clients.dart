@@ -12,6 +12,7 @@ import '../data/models/repositories/clients_repository.dart';
 import '../services/client_csv_importer.dart';
 import '../services/client_meta.dart';
 
+
 // ✅ use the FS facade (web-safe)
 import '../services/engagement_detail_fs.dart';
 
@@ -354,7 +355,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
             children: [
               if (!_canFile)
                 Card(
-                  color: cs.surfaceVariant,
+                  color: cs.surfaceContainerHighest,
                   child: const ListTile(
                     leading: Icon(Icons.public),
                     title: Text('Web demo mode'),

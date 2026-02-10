@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +20,7 @@ import '../services/preparer_profile.dart';
 import '../services/client_meta.dart';
 import '../services/client_portal_fs.dart'; // reuse for EngagementMeta write (IO only)
 import '../services/file_save_open.dart';
+
 
 class AuditPacketScreen extends StatefulWidget {
   const AuditPacketScreen({
@@ -141,7 +141,7 @@ class _AuditPacketScreenState extends State<AuditPacketScreen> {
     if (vm.clientEmail.trim().isNotEmpty) contactLines.add('Email: ${vm.clientEmail.trim()}');
     if (vm.clientPhone.trim().isNotEmpty) contactLines.add('Phone: ${vm.clientPhone.trim()}');
 
-    final contactBlock = contactLines.isEmpty ? '' : '\n' + contactLines.join('\n');
+    final contactBlock = contactLines.isEmpty ? '' : '\n${contactLines.join('\n')}';
 
     return '''
 Audit Packet (Phase 1)
@@ -361,7 +361,7 @@ This is a Phase 1 audit packet export. Attachments and full workpaper content pa
               children: [
                 if (!_canExport)
                   Card(
-                    color: cs.surfaceVariant,
+                    color: cs.surfaceContainerHighest,
                     child: const ListTile(
                       leading: Icon(Icons.public),
                       title: Text('Web demo mode'),

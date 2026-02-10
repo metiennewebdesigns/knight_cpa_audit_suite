@@ -171,7 +171,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Planning',
                     subtitle: vm!.planningCompleted ? 'Completed ✅' : 'Not completed',
                     pillText: vm.planningCompleted ? 'Complete' : 'Open',
-                    pillBg: vm.planningCompleted ? cs.secondaryContainer : cs.surfaceVariant,
+                    pillBg: vm.planningCompleted ? cs.secondaryContainer : cs.surfaceContainerHighest,
                     pillBorder: vm.planningCompleted ? cs.secondary.withOpacity(0.35) : cs.onSurface.withOpacity(0.10),
                     onTap: () => context.pushNamed('engagementPlanning', pathParameters: {'id': widget.engagementId}),
                   ),
@@ -182,7 +182,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'PBC',
                     subtitle: 'Requested ${vm.pbcRequested} • Received ${vm.pbcReceived} • Reviewed ${vm.pbcReviewed}',
                     pillText: vm.pbcOverdue > 0 ? 'Overdue ${vm.pbcOverdue}' : 'OK',
-                    pillBg: vm.pbcOverdue > 0 ? cs.errorContainer : cs.surfaceVariant,
+                    pillBg: vm.pbcOverdue > 0 ? cs.errorContainer : cs.surfaceContainerHighest,
                     pillBorder: vm.pbcOverdue > 0 ? cs.error.withOpacity(0.35) : cs.onSurface.withOpacity(0.10),
                     onTap: () => context.pushNamed('pbcList', pathParameters: {'id': widget.engagementId}),
                   ),
@@ -195,7 +195,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                         ? 'No uploads yet'
                         : '${vm.portalUploads} uploaded • Last ${vm.portalLastUploadAt.isEmpty ? "—" : _prettyWhen(vm.portalLastUploadAt)}',
                     pillText: vm.portalUploads == 0 ? 'None' : 'Active',
-                    pillBg: vm.portalUploads == 0 ? cs.surfaceVariant : cs.tertiaryContainer,
+                    pillBg: vm.portalUploads == 0 ? cs.surfaceContainerHighest : cs.tertiaryContainer,
                     pillBorder: vm.portalUploads == 0 ? cs.onSurface.withOpacity(0.10) : cs.tertiary.withOpacity(0.35),
                     onTap: () => context.pushNamed('clientPortal', pathParameters: {'id': widget.engagementId}),
                   ),
@@ -217,7 +217,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Letters',
                     subtitle: vm.lettersGenerated == 0 ? 'No letters generated' : '${vm.lettersGenerated} generated',
                     pillText: vm.lettersGenerated == 0 ? '0' : '${vm.lettersGenerated}',
-                    pillBg: cs.surfaceVariant,
+                    pillBg: cs.surfaceContainerHighest,
                     pillBorder: cs.onSurface.withOpacity(0.10),
                     onTap: () => context.pushNamed('lettersHub', pathParameters: {'id': widget.engagementId}),
                   ),
@@ -228,7 +228,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Deliverable Pack',
                     subtitle: vm.deliverableLastExportAt.isEmpty ? 'Not exported' : 'Last export ${_prettyWhen(vm.deliverableLastExportAt)}',
                     pillText: vm.deliverableLastExportAt.isEmpty ? 'Not yet' : 'Exported',
-                    pillBg: vm.deliverableLastExportAt.isEmpty ? cs.surfaceVariant : cs.secondaryContainer,
+                    pillBg: vm.deliverableLastExportAt.isEmpty ? cs.surfaceContainerHighest : cs.secondaryContainer,
                     pillBorder: vm.deliverableLastExportAt.isEmpty ? cs.onSurface.withOpacity(0.10) : cs.secondary.withOpacity(0.35),
                     onTap: null,
                   ),
@@ -239,7 +239,7 @@ class _AuditTimelineCardState extends State<AuditTimelineCard> {
                     title: 'Audit Packet',
                     subtitle: vm.packetLastExportAt.isEmpty ? 'Not exported' : 'Last export ${_prettyWhen(vm.packetLastExportAt)}',
                     pillText: vm.packetLastExportAt.isEmpty ? 'Not yet' : 'Exported',
-                    pillBg: vm.packetLastExportAt.isEmpty ? cs.surfaceVariant : cs.secondaryContainer,
+                    pillBg: vm.packetLastExportAt.isEmpty ? cs.surfaceContainerHighest : cs.secondaryContainer,
                     pillBorder: vm.packetLastExportAt.isEmpty ? cs.onSurface.withOpacity(0.10) : cs.secondary.withOpacity(0.35),
                     onTap: () => context.pushNamed('engagementPacket', pathParameters: {'id': widget.engagementId}),
                   ),
@@ -341,7 +341,7 @@ class _TimelineRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Material(
-      color: cs.surfaceVariant,
+      color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),

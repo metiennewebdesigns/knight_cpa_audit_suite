@@ -1,22 +1,20 @@
 // lib/features/audit_suite/services/letter_exporter_io.dart
-//
-// IO implementation: real PDF export to Documents/Auditron/Letters
-
 import 'dart:convert';
-import 'dart:io' show Directory, File;
+import 'dart:io';
 
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../../core/storage/local_store.dart';
-import '../../../core/utils/doc_path.dart';
 
 import '../data/models/repositories/clients_repository.dart';
 import '../data/models/repositories/engagements_repository.dart';
 import '../services/preparer_profile.dart';
 import '../services/client_meta.dart';
+import 'activity_log.dart';
 
 class LetterExportResult {
   final String savedPath;
@@ -61,18 +59,20 @@ class LetterExporter {
 
     // Preparer
     final preparer = await PreparerProfile.read();
-    final preparerName = (preparer['name'] ?? 'Independent Auditor').toString();
-    final preparerLine2 = (preparer['line2'] ?? '').toString().trim();
+    final preparerName = preparer['name'] ?? 'Independent Auditor';
+    final preparerLine2 = (preparer['line2'] ?? '').trim();
 
     // Client info
     String clientName = '';
     String clientAddressLine = '';
+    String clientId = '';
     try {
       final engRepo = EngagementsRepository(store);
       final clientsRepo = ClientsRepository(store);
 
       final eng = await engRepo.getById(engagementId);
       if (eng != null) {
+        clientId = eng.clientId;
         final client = await clientsRepo.getById(eng.clientId);
         clientName = (client?.name ?? eng.clientId).toString();
 
@@ -87,6 +87,7 @@ class LetterExporter {
       pw.MultiPage(
         pageFormat: PdfPageFormat.letter,
         margin: const pw.EdgeInsets.fromLTRB(50, 56, 50, 56),
+
         header: (context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -131,6 +132,7 @@ class LetterExporter {
             pw.SizedBox(height: 6),
           ],
         ),
+
         footer: (context) => pw.Container(
           padding: const pw.EdgeInsets.only(top: 10),
           child: pw.Row(
@@ -147,7 +149,8 @@ class LetterExporter {
             ],
           ),
         ),
-        build: (context) => [
+
+        build: (_) => [
           pw.Text(
             title,
             style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
@@ -163,13 +166,8 @@ class LetterExporter {
 
     final bytes = await doc.save();
 
-    // ✅ Use doc_path.dart (conditional) instead of path_provider directly
-    final docsPath = await getDocumentsPath();
-    if (docsPath == null || docsPath.isEmpty) {
-      throw StateError('Documents directory not available.');
-    }
-
-    final folder = Directory(p.join(docsPath, 'Auditron', 'Letters'));
+    final docs = await getApplicationDocumentsDirectory();
+    final folder = Directory(p.join(docs.path, 'Auditron', 'Letters'));
     if (!await folder.exists()) {
       await folder.create(recursive: true);
     }
@@ -189,12 +187,24 @@ class LetterExporter {
     } catch (_) {}
 
     await _recordLetterExport(
-      docsPath: docsPath,
+      docsPath: docs.path,
       engagementId: engagementId,
       type: type,
       fileName: fileName,
       filePath: outPath,
     );
+
+    // ✅ NEW: Activity feed entry (IO only)
+    try {
+      await ActivityLog.logLetterExport(
+        store: store,
+        engagementId: engagementId,
+        clientId: clientId, // ✅ now supported
+        letterType: type,
+        fileName: fileName,
+        filePath: outPath, // optional but recommended
+     );
+    } catch (_) {}
 
     return LetterExportResult(
       savedPath: outPath,
@@ -213,6 +223,71 @@ class LetterExporter {
         return 'Management Representation Letter';
       default:
         return 'Letter';
+    }
+  }
+
+  static String _todayIso() {
+    final d = DateTime.now();
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$mm-$dd';
+  }
+
+  static Future<void> _recordLetterExport({
+    required String docsPath,
+    required String engagementId,
+    required String type,
+    required String fileName,
+    required String filePath,
+  }) async {
+    try {
+      final metaDir = Directory(p.join(docsPath, 'Auditron', 'Letters', '_meta'));
+      if (!await metaDir.exists()) {
+        await metaDir.create(recursive: true);
+      }
+
+      final metaFile = File(p.join(metaDir.path, '$engagementId.json'));
+
+      Map<String, dynamic> data = {};
+      if (await metaFile.exists()) {
+        final raw = await metaFile.readAsString();
+        if (raw.trim().isNotEmpty) {
+          data = jsonDecode(raw) as Map<String, dynamic>;
+        }
+      }
+
+      final List<dynamic> exports = (data['exports'] as List<dynamic>?) ?? <dynamic>[];
+
+      exports.add({
+        'type': type,
+        'fileName': fileName,
+        'filePath': filePath,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+
+      data['engagementId'] = engagementId;
+      data['exports'] = exports;
+
+      await metaFile.writeAsString(jsonEncode(data), flush: true);
+    } catch (_) {}
+  }
+
+  static Future<int> getLettersGeneratedCount({
+    required String docsPath,
+    required String engagementId,
+  }) async {
+    try {
+      final metaFile = File(p.join(docsPath, 'Auditron', 'Letters', '_meta', '$engagementId.json'));
+      if (!await metaFile.exists()) return 0;
+
+      final raw = await metaFile.readAsString();
+      if (raw.trim().isEmpty) return 0;
+
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final exports = (data['exports'] as List<dynamic>?) ?? <dynamic>[];
+      return exports.length;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -320,73 +395,8 @@ Sincerely,
 
 ______________________________
 Prepared By: ______________________
-Title/Company: ______________________
+Title/Company: ____________________
 Date: ____________
 ''';
-  }
-
-  static String _todayIso() {
-    final d = DateTime.now();
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
-
-  static Future<void> _recordLetterExport({
-    required String docsPath,
-    required String engagementId,
-    required String type,
-    required String fileName,
-    required String filePath,
-  }) async {
-    try {
-      final metaDir = Directory(p.join(docsPath, 'Auditron', 'Letters', '_meta'));
-      if (!await metaDir.exists()) {
-        await metaDir.create(recursive: true);
-      }
-
-      final metaFile = File(p.join(metaDir.path, '$engagementId.json'));
-
-      Map<String, dynamic> data = {};
-      if (await metaFile.exists()) {
-        final raw = await metaFile.readAsString();
-        if (raw.trim().isNotEmpty) {
-          data = jsonDecode(raw) as Map<String, dynamic>;
-        }
-      }
-
-      final List<dynamic> exports = (data['exports'] as List<dynamic>?) ?? <dynamic>[];
-
-      exports.add({
-        'type': type,
-        'fileName': fileName,
-        'filePath': filePath,
-        'createdAt': DateTime.now().toIso8601String(),
-      });
-
-      data['engagementId'] = engagementId;
-      data['exports'] = exports;
-
-      await metaFile.writeAsString(jsonEncode(data), flush: true);
-    } catch (_) {}
-  }
-
-  static Future<int> getLettersGeneratedCount({
-    required String docsPath,
-    required String engagementId,
-  }) async {
-    try {
-      final metaFile = File(p.join(docsPath, 'Auditron', 'Letters', '_meta', '$engagementId.json'));
-      if (!await metaFile.exists()) return 0;
-
-      final raw = await metaFile.readAsString();
-      if (raw.trim().isEmpty) return 0;
-
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final exports = (data['exports'] as List<dynamic>?) ?? <dynamic>[];
-      return exports.length;
-    } catch (_) {
-      return 0;
-    }
   }
 }

@@ -12,6 +12,7 @@ import '../data/models/repositories/risk_assessments_repository.dart';
 
 import '../services/ai_priority.dart';
 
+
 class EngagementsListScreen extends StatefulWidget {
   const EngagementsListScreen({
     super.key,
@@ -302,7 +303,7 @@ class _EngagementsListScreenState extends State<EngagementsListScreen> {
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<_SortMode>(
-                                  value: _sort,
+                                  initialValue: _sort,
                                   items: _SortMode.values
                                       .map((s) => DropdownMenuItem(
                                             value: s,
@@ -587,7 +588,7 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? cs.primary.withOpacity(0.18) : cs.surfaceVariant,
+      color: selected ? cs.primary.withOpacity(0.18) : cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
@@ -761,14 +762,14 @@ class _CreateEngagementDialogState extends State<_CreateEngagementDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _clientId,
+              initialValue: _clientId,
               items: widget.clients.map((c) => DropdownMenuItem(value: c.id, child: Text(c.name))).toList(),
               onChanged: (v) => setState(() => _clientId = v),
               decoration: const InputDecoration(labelText: 'Client', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _status,
+              initialValue: _status,
               items: _statuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (v) => setState(() => _status = v ?? _status),
               decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),

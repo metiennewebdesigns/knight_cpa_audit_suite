@@ -450,7 +450,7 @@ class _WorkpaperDetailScreenState extends State<WorkpaperDetailScreen> {
                                     Text('Type', style: Theme.of(context).textTheme.labelLarge),
                                     const SizedBox(height: 8),
                                     DropdownButtonFormField<String>(
-                                      value: _type,
+                                      initialValue: _type,
                                       items: _typeValues
                                           .map((v) => DropdownMenuItem(
                                                 value: v,
@@ -471,7 +471,7 @@ class _WorkpaperDetailScreenState extends State<WorkpaperDetailScreen> {
                                     Text('Status', style: Theme.of(context).textTheme.labelLarge),
                                     const SizedBox(height: 8),
                                     DropdownButtonFormField<String>(
-                                      value: _status,
+                                      initialValue: _status,
                                       items: _statusValues
                                           .map((v) => DropdownMenuItem(
                                                 value: v,

@@ -330,7 +330,7 @@ class _RiskItemCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: levelOptions.contains(item.level) ? item.level : 'Low',
+                    initialValue: levelOptions.contains(item.level) ? item.level : 'Low',
                     items: levelOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                     onChanged: locked ? null : (v) => onChanged(item.copyWith(level: v ?? item.level)),
                     decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Level'),
@@ -339,7 +339,7 @@ class _RiskItemCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<int>(
-                    value: scoreOptions.contains(item.score1to5) ? item.score1to5 : 1,
+                    initialValue: scoreOptions.contains(item.score1to5) ? item.score1to5 : 1,
                     items: scoreOptions.map((v) => DropdownMenuItem(value: v, child: Text('$v'))).toList(),
                     onChanged: locked ? null : (v) => onChanged(item.copyWith(score1to5: v ?? item.score1to5)),
                     decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Score'),

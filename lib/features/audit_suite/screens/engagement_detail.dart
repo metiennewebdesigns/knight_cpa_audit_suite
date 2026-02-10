@@ -620,10 +620,10 @@ $deepLink
 
           final pinStatusPill = vm.clientPortalPin.trim().isNotEmpty
               ? _Pill(text: 'PIN ACTIVE', bg: cs.secondaryContainer, border: cs.secondary.withOpacity(0.35))
-              : _Pill(text: 'PIN NOT SET', bg: cs.surfaceVariant, border: cs.onSurface.withOpacity(0.12));
+              : _Pill(text: 'PIN NOT SET', bg: cs.surfaceContainerHighest, border: cs.onSurface.withOpacity(0.12));
 
           final portalClosedPill = isFinalized
-              ? _Pill(text: 'PORTAL CLOSED', bg: cs.surfaceVariant, border: cs.onSurface.withOpacity(0.12))
+              ? _Pill(text: 'PORTAL CLOSED', bg: cs.surfaceContainerHighest, border: cs.onSurface.withOpacity(0.12))
               : null;
 
           final portalLink = '/engagements/${widget.engagementId}/client-portal?pin=${vm.clientPortalPin}';
@@ -654,7 +654,7 @@ $deepLink
               children: [
                 if (!vm.canUseFileSystem)
                   Card(
-                    color: cs.surfaceVariant,
+                    color: cs.surfaceContainerHighest,
                     child: const ListTile(
                       leading: Icon(Icons.public),
                       title: Text('Web demo mode'),
@@ -709,27 +709,27 @@ $deepLink
                           children: [
                             _Pill(
                               text: 'Deliverables: ${vm.exportHistory.deliverablePackCount}',
-                              bg: cs.surfaceVariant,
+                              bg: cs.surfaceContainerHighest,
                               border: cs.onSurface.withOpacity(0.10),
                             ),
                             _Pill(
                               text: 'Packets: ${vm.exportHistory.auditPacketCount}',
-                              bg: cs.surfaceVariant,
+                              bg: cs.surfaceContainerHighest,
                               border: cs.onSurface.withOpacity(0.10),
                             ),
                             _Pill(
                               text: 'Certificates: ${vm.exportHistory.integrityCertCount}',
-                              bg: cs.surfaceVariant,
+                              bg: cs.surfaceContainerHighest,
                               border: cs.onSurface.withOpacity(0.10),
                             ),
                             _Pill(
                               text: 'Portal Trails: ${vm.exportHistory.portalAuditCount}',
-                              bg: cs.surfaceVariant,
+                              bg: cs.surfaceContainerHighest,
                               border: cs.onSurface.withOpacity(0.10),
                             ),
                             _Pill(
                               text: 'Letters: ${vm.exportHistory.lettersCount}',
-                              bg: cs.surfaceVariant,
+                              bg: cs.surfaceContainerHighest,
                               border: cs.onSurface.withOpacity(0.10),
                             ),
                           ],
@@ -804,7 +804,7 @@ $deepLink
                                 if (vm.engagement.aiPriorityUpdatedAt.trim().isNotEmpty)
                                   _Pill(
                                     text: 'Saved',
-                                    bg: cs.surfaceVariant,
+                                    bg: cs.surfaceContainerHighest,
                                     border: cs.onSurface.withOpacity(0.10),
                                   ),
                               ],
@@ -939,12 +939,12 @@ $deepLink
                       children: [
                         _Pill(
                           text: '${vm.discrepancyOpenCount} open',
-                          bg: cs.surfaceVariant,
+                          bg: cs.surfaceContainerHighest,
                           border: cs.onSurface.withOpacity(0.10),
                         ),
                         _Pill(
                           text: '\$${vm.discrepancyOpenTotal.toStringAsFixed(2)} total',
-                          bg: cs.surfaceVariant,
+                          bg: cs.surfaceContainerHighest,
                           border: cs.onSurface.withOpacity(0.10),
                         ),
                         FilledButton.icon(
@@ -1334,9 +1334,9 @@ _HealthColors _healthColors(BuildContext context, _HealthTone tone) {
     case _HealthTone.risk:
       return _HealthColors(cs.errorContainer, cs.error.withOpacity(0.40));
     case _HealthTone.finalized:
-      return _HealthColors(cs.surfaceVariant, cs.onSurface.withOpacity(0.12));
+      return _HealthColors(cs.surfaceContainerHighest, cs.onSurface.withOpacity(0.12));
     case _HealthTone.unknown:
-      return _HealthColors(cs.surfaceVariant, cs.onSurface.withOpacity(0.10));
+      return _HealthColors(cs.surfaceContainerHighest, cs.onSurface.withOpacity(0.10));
   }
 }
 
@@ -1429,7 +1429,7 @@ class _ActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: cs.surfaceVariant,
+      color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -1495,7 +1495,7 @@ class _RiskSummaryCard extends StatelessWidget {
     final score = risk.overallScore1to5();
     final assessed = risk.updated.trim().isEmpty ? '—' : risk.updated.trim();
 
-    Color bg = cs.surfaceVariant;
+    Color bg = cs.surfaceContainerHighest;
     Color border = cs.onSurface.withOpacity(0.10);
 
     final l = level.toLowerCase();
@@ -1526,12 +1526,12 @@ class _RiskSummaryCard extends StatelessWidget {
                   healthPill,
                   _Pill(
                     text: 'Last assessed: $assessed',
-                    bg: cs.surfaceVariant,
+                    bg: cs.surfaceContainerHighest,
                     border: cs.onSurface.withOpacity(0.10),
                   ),
                   _Pill(
                     text: extraLine,
-                    bg: cs.surfaceVariant,
+                    bg: cs.surfaceContainerHighest,
                     border: cs.onSurface.withOpacity(0.10),
                   ),
                 ],
@@ -1562,7 +1562,7 @@ class _WorkpaperRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: cs.surfaceVariant,
+      color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -1728,14 +1728,14 @@ class _AddWorkpaperDialogState extends State<_AddWorkpaperDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _status,
+              initialValue: _status,
               items: _statusOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
               onChanged: (v) => setState(() => _status = v ?? _status),
               decoration: const InputDecoration(labelText: 'Status', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _type,
+              initialValue: _type,
               items: _typeOptions.map((v) => DropdownMenuItem(value: v, child: Text(v.toUpperCase()))).toList(),
               onChanged: (v) => setState(() => _type = v ?? _type),
               decoration: const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),

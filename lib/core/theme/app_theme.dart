@@ -16,7 +16,6 @@ class AppTheme {
         primary: gold,
         secondary: gold,
         surface: const Color(0xFF0B0F1A),
-        background: const Color(0xFF070A12),
       ),
     );
 
@@ -94,9 +93,9 @@ class AppTheme {
         height: 72,
         backgroundColor: const Color(0xFF0B0F1A),
         indicatorColor: gold.withOpacity(0.18),
-        labelTextStyle: MaterialStateProperty.resolveWith(
+        labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
-            fontWeight: states.contains(MaterialState.selected)
+            fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w800
                 : FontWeight.w600,
           ),
