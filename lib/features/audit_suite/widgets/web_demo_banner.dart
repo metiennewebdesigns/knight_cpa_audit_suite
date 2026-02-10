@@ -1,23 +1,29 @@
+// lib/features/audit_suite/widgets/web_demo_banner.dart
+
 import 'package:flutter/material.dart';
 
 class WebDemoBanner extends StatelessWidget {
   const WebDemoBanner({
     super.key,
-    required this.message,
+    required this.show,
+    this.message,
   });
 
-  final String message;
+  final bool show;
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    if (!show) return const SizedBox.shrink();
 
     return Card(
-      color: cs.surfaceContainerHighest,
       child: ListTile(
         leading: const Icon(Icons.public),
         title: const Text('Web demo mode'),
-        subtitle: Text(message),
+        subtitle: Text(
+          message ??
+              'File-backed features are disabled on web (exports, portal logs, PIN storage).',
+        ),
       ),
     );
   }

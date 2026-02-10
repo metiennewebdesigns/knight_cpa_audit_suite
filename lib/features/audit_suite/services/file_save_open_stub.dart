@@ -1,31 +1,18 @@
-class SavedFileResult {
-  final String savedPath;
-  final String savedFileName;
-  final bool didOpenFile;
+// lib/features/audit_suite/services/file_save_open_stub.dart
+//
+// Web-safe stub.
 
-  const SavedFileResult({
-    required this.savedPath,
-    required this.savedFileName,
-    required this.didOpenFile,
-  });
-}
+import 'dart:typed_data';
 
-/// Backwards-compatible alias type (older code expects SaveOpenResult).
-class SaveOpenResult extends SavedFileResult {
-  const SaveOpenResult({
-    required super.savedPath,
-    required super.savedFileName,
-    required super.didOpenFile,
-  });
-}
+import 'file_save_open.dart';
 
-/// Web-safe stub. Writes nothing; returns didOpenFile=false.
-Future<SaveOpenResult> savePdfBytesAndMaybeOpen({
+Future<PdfSaveResult> savePdfBytesAndMaybeOpenStandalone({
   required String fileName,
-  required List<int> bytes,
-  required String subfolder, // unused on web
+  required Uint8List bytes,
+  String subfolder = 'auditron/exports',
+  bool openAfterSave = true,
 }) async {
-  return SaveOpenResult(
+  return PdfSaveResult(
     savedPath: '',
     savedFileName: fileName,
     didOpenFile: false,

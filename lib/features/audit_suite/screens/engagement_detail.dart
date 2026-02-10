@@ -34,7 +34,9 @@ import '../services/engagement_detail_fs.dart';
 
 import '../widgets/evidence_ledger_card.dart';
 import '../widgets/audit_timeline_card.dart';
+import '../widgets/integrity_status_card.dart';
 import '../widgets/ai_copilot_card.dart';
+import '../widgets/export_history_card.dart';
 
 class EngagementDetailScreen extends StatefulWidget {
   const EngagementDetailScreen({
@@ -993,6 +995,32 @@ $deepLink
                       await Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250));
                     }
                   },
+                ),
+                const SizedBox(height: 12),
+
+                ExportHistoryCard(
+                  store: widget.store,
+                  engagementId: widget.engagementId,
+                ),
+                const SizedBox(height: 12),
+
+                Container(
+                  key: _ledgerKey,
+                  child: EvidenceLedgerCard(engagementId: widget.engagementId),
+                ),
+
+                IntegrityStatusCard(
+                  engagementId: widget.engagementId,
+                  onTapOpenLedger: () async {
+                    final ctx = _ledgerKey.currentContext;
+                    if (ctx != null) {
+                      await Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250));
+                    }
+                },
+                   onExportCertificate: () async {
+                     final vm = await _future;
+                     await _exportIntegrityCertificate(vm);
+                   },
                 ),
                 const SizedBox(height: 12),
 

@@ -1,3 +1,6 @@
+// lib/features/audit_suite/screens/pbc_list.dart
+
+import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -14,8 +17,9 @@ import '../services/preparer_profile.dart';
 import '../services/client_meta.dart';
 import '../services/evidence_ledger.dart';
 import '../services/pbc_store.dart';
-import '../services/pbc_pdf_exporter.dart';
 
+// ✅ Platform-safe PBC PDF exporter (stub on web, io on desktop)
+import '../services/pbc_pdf_exporter.dart';
 
 class PbcListScreen extends StatefulWidget {
   const PbcListScreen({
@@ -45,6 +49,7 @@ class _PbcItem {
   final String reviewedAt;
   final String notes;
 
+  // Evidence attachment fields
   final String attachmentName;
   final String attachmentPath;
   final String attachmentSha256;
@@ -171,11 +176,6 @@ class _PbcListScreenState extends State<PbcListScreen> {
     _init();
   }
 
-  void _snack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-  }
-
   Future<void> _init() async {
     setState(() => _busy = true);
     try {
@@ -201,27 +201,192 @@ class _PbcListScreenState extends State<PbcListScreen> {
   }
 
   Future<void> _persist() async {
-    await PbcStore.saveRaw(widget.engagementId, _items.map((e) => e.toJson()).toList());
+    await PbcStore.saveRaw(
+      widget.engagementId,
+      _items.map((e) => e.toJson()).toList(),
+    );
   }
 
   String _nowIso() => DateTime.now().toIso8601String();
   String _newId() => 'pbc_${DateTime.now().millisecondsSinceEpoch}';
 
-  List<_PbcItem> get _filtered => _filter == null ? _items : _items.where((i) => i.status == _filter).toList();
+  List<_PbcItem> get _filtered =>
+      _filter == null ? _items : _items.where((i) => i.status == _filter).toList();
+
   int _count(_PbcStatus s) => _items.where((i) => i.status == s).length;
 
+  String _todayIso() {
+    final d = DateTime.now();
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$mm-$dd';
+  }
+
+  DateTime? _parseAnyIso(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return null;
+    try {
+      return DateTime.parse(t);
+    } catch (_) {
+      return null;
+    }
+  }
+
   int _daysSince(String iso) {
-    final dt = DateTime.tryParse(iso.trim());
+    final dt = _parseAnyIso(iso);
     if (dt == null) return 0;
     return DateTime.now().difference(dt).inDays;
   }
 
-  bool _isOverdue(_PbcItem item) => item.status == _PbcStatus.requested && _daysSince(item.requestedAt) >= _overdueDays;
+  bool _isOverdue(_PbcItem item) {
+    if (item.status != _PbcStatus.requested) return false;
+    return _daysSince(item.requestedAt) >= _overdueDays;
+  }
+
   int _overdueCount() => _items.where(_isOverdue).length;
 
+  String _singleItemReminderText(_PbcItem item) {
+    final days = _daysSince(item.requestedAt);
+    final who = _clientName.isEmpty ? 'Team' : _clientName;
+
+    return '''
+Subject: PBC Reminder – ${widget.engagementId}
+
+Hello $who,
+
+This is a friendly reminder for the following outstanding PBC item (requested ${days} day(s) ago):
+
+• ${item.title}
+
+If the item is unavailable, please reply with an expected delivery date.
+
+Thank you,
+$_preparerName
+Powered by Auditron
+''';
+  }
+
+  String _bulkOverdueReminderText(List<_PbcItem> overdue) {
+    final who = _clientName.isEmpty ? 'Team' : _clientName;
+    final lines = overdue
+        .map((i) => '• ${i.title} (requested ${_daysSince(i.requestedAt)} day(s) ago)')
+        .join('\n');
+
+    return '''
+Subject: PBC Reminder – ${widget.engagementId}
+
+Hello $who,
+
+This is a reminder for the following outstanding PBC items:
+
+$lines
+
+If any item is unavailable, please reply with an expected delivery date.
+
+Thank you,
+$_preparerName
+Powered by Auditron
+''';
+  }
+
+  Future<void> _copyReminderForItem(_PbcItem item) async {
+    await Clipboard.setData(ClipboardData(text: _singleItemReminderText(item)));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reminder copied ✅')));
+  }
+
+  Future<void> _copyReminderForAllOverdue() async {
+    final overdue = _items.where(_isOverdue).toList();
+    if (overdue.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No overdue items ✅')));
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: _bulkOverdueReminderText(overdue)));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Overdue reminder copied ✅')));
+  }
+
+  Future<void> _loadGeneralTemplate() async {
+    if (_busy) return;
+
+    if (_items.isNotEmpty) {
+      final ok = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dc) => AlertDialog(
+          title: const Text('Load General Template?'),
+          content: const Text(
+            'This will ADD the general template items to your current list.\n'
+            'Duplicate titles will be skipped.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dc).pop(false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.of(dc).pop(true), child: const Text('Load')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+
+    final existingTitles = _items.map((e) => e.title.trim().toLowerCase()).toSet();
+    final now = _todayIso();
+
+    final toAdd = _generalTemplateItems()
+        .where((t) => !existingTitles.contains(t.title.trim().toLowerCase()))
+        .map((t) => _PbcItem(
+              id: _newId(),
+              title: t.title,
+              category: t.category,
+              status: _PbcStatus.requested,
+              requestedAt: now,
+              receivedAt: '',
+              reviewedAt: '',
+              notes: '',
+              attachmentName: '',
+              attachmentPath: '',
+              attachmentSha256: '',
+              attachmentBytes: 0,
+            ))
+        .toList();
+
+    setState(() {
+      _items = [..._items, ...toAdd];
+      _changed = true;
+    });
+
+    await _persist();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Loaded ${toAdd.length} general PBC items ✅')),
+    );
+  }
+
+  Future<void> _addCustomItem() async {
+    if (_busy) return;
+    final created = await showDialog<_PbcItem>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _AddPbcItemDialog(nowIso: _todayIso),
+    );
+    if (created == null) return;
+
+    setState(() {
+      _items = [..._items, created.copyWith(id: _newId())];
+      _changed = true;
+    });
+    await _persist();
+  }
+
+  // Attach evidence file + hash + ledger entry
   Future<_PbcItem> _attachEvidence(_PbcItem item) async {
     if (!_canFile) {
-      _snack('Evidence attach is disabled on web demo.');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Evidence attach is disabled on web demo.')),
+        );
+      }
       return item;
     }
 
@@ -270,7 +435,10 @@ class _PbcListScreenState extends State<PbcListScreen> {
         attachmentBytes: 0,
       );
     } else if (status == _PbcStatus.received) {
-      updated = updated.copyWith(receivedAt: item.receivedAt.isEmpty ? now : item.receivedAt, reviewedAt: '');
+      updated = updated.copyWith(
+        receivedAt: item.receivedAt.isEmpty ? now : item.receivedAt,
+        reviewedAt: '',
+      );
 
       final ok = await showDialog<bool>(
         context: context,
@@ -289,7 +457,9 @@ class _PbcListScreenState extends State<PbcListScreen> {
         updated = await _attachEvidence(updated);
       }
     } else if (status == _PbcStatus.reviewed) {
-      updated = updated.copyWith(reviewedAt: item.reviewedAt.isEmpty ? now : item.reviewedAt);
+      updated = updated.copyWith(
+        reviewedAt: item.reviewedAt.isEmpty ? now : item.reviewedAt,
+      );
     }
 
     setState(() {
@@ -321,28 +491,15 @@ class _PbcListScreenState extends State<PbcListScreen> {
       _items = _items.where((x) => x.id != item.id).toList();
       _changed = true;
     });
-    await _persist();
-  }
 
-  Future<void> _addCustomItem() async {
-    if (_busy) return;
-    final created = await showDialog<_PbcItem>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _AddPbcItemDialog(nowIso: () => DateTime.now().toIso8601String()),
-    );
-    if (created == null) return;
-
-    setState(() {
-      _items = [..._items, created.copyWith(id: _newId())];
-      _changed = true;
-    });
     await _persist();
   }
 
   Future<void> _copyEmailText() async {
     final requested = _items.where((i) => i.status == _PbcStatus.requested).toList();
-    final lines = requested.isEmpty ? 'All PBC items are currently received/reviewed.' : requested.map((i) => '• ${i.title}').join('\n');
+    final lines = requested.isEmpty
+        ? 'All PBC items are currently received/reviewed.'
+        : requested.map((i) => '• ${i.title}').join('\n');
 
     final text = '''
 Subject: PBC Request – ${widget.engagementId}
@@ -359,33 +516,51 @@ Powered by Auditron
 ''';
 
     await Clipboard.setData(ClipboardData(text: text));
-    _snack('Email request text copied ✅');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Email request text copied ✅')));
   }
 
+  // ✅ NEW: Export PBC PDF using platform-safe exporter
   Future<void> _exportPbcPdf() async {
     if (_busy) return;
 
     if (!_canFile) {
-      _snack('PBC PDF export is disabled on web demo.');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PBC PDF export is disabled on web demo.')),
+      );
       return;
     }
 
     setState(() => _busy = true);
     try {
-      final itemsRaw = _items.map((e) => e.toJson()).toList();
-
       final res = await PbcPdfExporter.export(
         engagementId: widget.engagementId,
         clientName: _clientName,
         clientAddressLine: _clientAddressLine,
         preparerName: _preparerName,
         preparerLine2: _preparerLine2,
-        itemsRaw: itemsRaw,
+        itemsRaw: _items.map((e) => e.toJson()).toList(),
       );
 
-      _snack(res.didOpenFile ? 'Exported + opened ${res.savedFileName} ✅' : 'Exported ${res.savedFileName} ✅');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            res.didOpenFile
+                ? 'Exported + opened ${res.savedFileName} ✅'
+                : 'Exported ${res.savedFileName} ✅',
+          ),
+        ),
+      );
+
+      _changed = true;
     } catch (e) {
-      _snack('Export failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -411,12 +586,22 @@ Powered by Auditron
           ),
           actions: [
             IconButton(
+              tooltip: 'Load General Template',
+              onPressed: _busy ? null : _loadGeneralTemplate,
+              icon: const Icon(Icons.auto_awesome),
+            ),
+            IconButton(
               tooltip: 'Copy Email Text',
               onPressed: _busy ? null : _copyEmailText,
               icon: const Icon(Icons.content_copy),
             ),
             IconButton(
-              tooltip: _canFile ? 'Export PDF' : 'Disabled on web',
+              tooltip: overdue == 0 ? 'No overdue items' : 'Copy reminder for overdue ($overdue)',
+              onPressed: _busy ? null : _copyReminderForAllOverdue,
+              icon: const Icon(Icons.notification_important_outlined),
+            ),
+            IconButton(
+              tooltip: _canFile ? 'Export PDF' : 'Export disabled on web',
               onPressed: _busy ? null : _exportPbcPdf,
               icon: const Icon(Icons.picture_as_pdf_outlined),
             ),
@@ -429,15 +614,14 @@ Powered by Auditron
                 children: [
                   if (!_canFile)
                     Card(
-                      color: cs.surfaceContainerHighest,
+                      color: cs.surfaceVariant,
                       child: const ListTile(
                         leading: Icon(Icons.public),
                         title: Text('Web demo mode'),
-                        subtitle: Text('PBC local storage, evidence attach, and PDF export are disabled on web.'),
+                        subtitle: Text('PBC storage + PDF export + evidence attachments are disabled on web.'),
                       ),
                     ),
                   if (!_canFile) const SizedBox(height: 12),
-
                   _HeaderCard(
                     title: 'Provided-By-Client (PBC)',
                     subtitle:
@@ -450,22 +634,21 @@ Powered by Auditron
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   _FilterRow(current: _filter, onChanged: (v) => setState(() => _filter = v)),
                   const SizedBox(height: 12),
-
                   FilledButton.icon(
                     onPressed: _busy ? null : _addCustomItem,
                     icon: const Icon(Icons.add),
                     label: const Text('Add custom PBC item'),
                   ),
                   const SizedBox(height: 12),
-
                   if (_filtered.isEmpty)
                     _EmptyState(
                       icon: Icons.inbox_outlined,
                       title: 'No items',
-                      subtitle: _filter == null ? 'Add a custom item to begin.' : 'No items match this filter.',
+                      subtitle: _filter == null
+                          ? 'Load the general template or add a custom item.'
+                          : 'No items match this filter.',
                     )
                   else
                     ..._filtered.map(
@@ -476,10 +659,7 @@ Powered by Auditron
                           overdueDays: _daysSince(i.requestedAt),
                           isOverdue: _isOverdue(i),
                           canAttachEvidence: _canFile,
-                          onCopyReminder: () async {
-                            await Clipboard.setData(ClipboardData(text: _singleItemReminderText(i)));
-                            _snack('Reminder copied ✅');
-                          },
+                          onCopyReminder: () => _copyReminderForItem(i),
                           onRequested: () => _setStatus(i, _PbcStatus.requested),
                           onReceived: () => _setStatus(i, _PbcStatus.received),
                           onReviewed: () => _setStatus(i, _PbcStatus.reviewed),
@@ -492,30 +672,8 @@ Powered by Auditron
       ),
     );
   }
-
-  String _singleItemReminderText(_PbcItem item) {
-    final who = _clientName.isEmpty ? 'Team' : _clientName;
-    final days = _daysSince(item.requestedAt);
-
-    return '''
-Subject: PBC Reminder – ${widget.engagementId}
-
-Hello $who,
-
-This is a friendly reminder for the following outstanding PBC item (requested $days day(s) ago):
-
-• ${item.title}
-
-If the item is unavailable, please reply with an expected delivery date.
-
-Thank you,
-$_preparerName
-Powered by Auditron
-''';
-  }
 }
-
-/* ===================== UI bits ===================== */
+/* ===================== UI ===================== */
 
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({required this.title, required this.subtitle, required this.right});
@@ -546,7 +704,12 @@ class _HeaderCard extends StatelessWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.2)),
                 const SizedBox(height: 6),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurface.withOpacity(0.70))),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: cs.onSurface.withOpacity(0.70),
+                      ),
+                ),
               ]),
             ),
             const SizedBox(width: 10),
@@ -570,9 +733,21 @@ class _FilterRow extends StatelessWidget {
       runSpacing: 10,
       children: [
         _FilterChip(label: 'All', selected: current == null, onTap: () => onChanged(null)),
-        _FilterChip(label: 'Requested', selected: current == _PbcStatus.requested, onTap: () => onChanged(_PbcStatus.requested)),
-        _FilterChip(label: 'Received', selected: current == _PbcStatus.received, onTap: () => onChanged(_PbcStatus.received)),
-        _FilterChip(label: 'Reviewed', selected: current == _PbcStatus.reviewed, onTap: () => onChanged(_PbcStatus.reviewed)),
+        _FilterChip(
+          label: 'Requested',
+          selected: current == _PbcStatus.requested,
+          onTap: () => onChanged(_PbcStatus.requested),
+        ),
+        _FilterChip(
+          label: 'Received',
+          selected: current == _PbcStatus.received,
+          onTap: () => onChanged(_PbcStatus.received),
+        ),
+        _FilterChip(
+          label: 'Reviewed',
+          selected: current == _PbcStatus.reviewed,
+          onTap: () => onChanged(_PbcStatus.reviewed),
+        ),
       ],
     );
   }
@@ -588,7 +763,7 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? cs.primary.withOpacity(0.18) : cs.surfaceContainerHighest,
+      color: selected ? cs.primary.withOpacity(0.18) : cs.surfaceVariant,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
@@ -597,9 +772,14 @@ class _FilterChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: selected ? cs.primary.withOpacity(0.45) : cs.onSurface.withOpacity(0.10)),
+            border: Border.all(
+              color: selected ? cs.primary.withOpacity(0.45) : cs.onSurface.withOpacity(0.10),
+            ),
           ),
-          child: Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w900)),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
         ),
       ),
     );
@@ -635,29 +815,31 @@ class _PbcRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     String statusLabel;
-    switch (item.status) {
-      case _PbcStatus.requested:
-        statusLabel = 'Requested';
-        break;
-      case _PbcStatus.received:
-        statusLabel = 'Received';
-        break;
-      case _PbcStatus.reviewed:
-        statusLabel = 'Reviewed';
-        break;
+    if (item.status == _PbcStatus.requested) {
+      statusLabel = 'Requested';
+    } else if (item.status == _PbcStatus.received) {
+      statusLabel = 'Received';
+    } else {
+      statusLabel = 'Reviewed';
     }
 
-    final hasAttachment = item.attachmentPath.trim().isNotEmpty && item.attachmentSha256.trim().isNotEmpty;
+    final hasAttachment =
+        item.attachmentPath.trim().isNotEmpty && item.attachmentSha256.trim().isNotEmpty;
 
     return Material(
-      color: cs.surfaceContainerHighest,
+      color: cs.surfaceVariant,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(
             children: [
-              Expanded(child: Text(item.title, style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.2))),
+              Expanded(
+                child: Text(
+                  item.title,
+                  style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.2),
+                ),
+              ),
               const SizedBox(width: 10),
               _Pill(text: statusLabel, bg: cs.surface, border: cs.onSurface.withOpacity(0.12)),
               IconButton(tooltip: 'Copy reminder', onPressed: onCopyReminder, icon: const Icon(Icons.copy)),
@@ -665,25 +847,46 @@ class _PbcRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
+
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               _Pill(text: '[${item.category}]', bg: cs.surface, border: cs.onSurface.withOpacity(0.10)),
-              if (isOverdue) _Pill(text: 'Overdue (${overdueDays}d)', bg: cs.errorContainer, border: cs.error.withOpacity(0.40)),
-              if (!canAttachEvidence) _Pill(text: 'Evidence disabled (web)', bg: cs.surface, border: cs.onSurface.withOpacity(0.10)),
+              if (isOverdue)
+                _Pill(
+                  text: 'Overdue (${overdueDays}d)',
+                  bg: cs.errorContainer,
+                  border: cs.error.withOpacity(0.40),
+                ),
+              if (!canAttachEvidence)
+                _Pill(
+                  text: 'Evidence disabled (web)',
+                  bg: cs.surface,
+                  border: cs.onSurface.withOpacity(0.10),
+                ),
             ],
           ),
+
           const SizedBox(height: 10),
+
           if (hasAttachment) ...[
-            _Pill(text: 'Evidence attached ✅', bg: cs.secondaryContainer, border: cs.secondary.withOpacity(0.35)),
+            _Pill(
+              text: 'Evidence attached ✅',
+              bg: cs.secondaryContainer,
+              border: cs.secondary.withOpacity(0.35),
+            ),
             const SizedBox(height: 6),
             Text(
               'SHA-256: ${item.attachmentSha256.substring(0, 12)}…',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', color: cs.onSurface.withOpacity(0.70)),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    color: cs.onSurface.withOpacity(0.70),
+                  ),
             ),
             const SizedBox(height: 10),
           ],
+
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -709,8 +912,15 @@ class _Pill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999), border: Border.all(color: border)),
-      child: Text(text, style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w900)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w900),
+      ),
     );
   }
 }
@@ -730,7 +940,10 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(icon, size: 46),
             const SizedBox(height: 10),
-            Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
             Text(subtitle, textAlign: TextAlign.center),
           ],
@@ -811,3 +1024,27 @@ class _AddPbcItemDialogState extends State<_AddPbcItemDialog> {
     );
   }
 }
+
+class _Tpl {
+  final String title;
+  final String category;
+  const _Tpl(this.title, this.category);
+}
+
+List<_Tpl> _generalTemplateItems() => const [
+      _Tpl('Final trial balance (export)', 'Financials'),
+      _Tpl('General ledger detail (period under audit)', 'Financials'),
+      _Tpl('Bank statements for all accounts (period under audit)', 'Cash'),
+      _Tpl('Bank reconciliations (all accounts)', 'Cash'),
+      _Tpl('AR aging + customer listing', 'Receivables'),
+      _Tpl('AP aging + vendor listing', 'Payables'),
+      _Tpl('Revenue detail (by month) + support for samples', 'Revenue'),
+      _Tpl('Payroll registers + payroll tax filings', 'Payroll'),
+      _Tpl('Debt agreements + covenant calculations', 'Debt'),
+      _Tpl('Fixed asset schedule + depreciation', 'Fixed Assets'),
+      _Tpl('Significant contracts + amendments', 'Legal'),
+      _Tpl('Related party listing + transactions', 'Compliance'),
+      _Tpl('Owner/management listing + approvals', 'Governance'),
+      _Tpl('Inventory listing + costing method (if applicable)', 'Inventory'),
+      _Tpl('Insurance policies (key coverages)', 'Insurance'),
+    ];

@@ -1,60 +1,85 @@
+// lib/features/audit_suite/services/file_save_open_io.dart
+//
+// IO implementation for save/open.
+
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-class SavedFileResult {
-  final String savedPath;
-  final String savedFileName;
-  final bool didOpenFile;
+import 'file_save_open.dart';
 
-  const SavedFileResult({
-    required this.savedPath,
-    required this.savedFileName,
-    required this.didOpenFile,
-  });
-}
-
-/// Backwards-compatible alias type (older code expects SaveOpenResult).
-class SaveOpenResult extends SavedFileResult {
-  const SaveOpenResult({
-    required super.savedPath,
-    required super.savedFileName,
-    required super.didOpenFile,
-  });
-}
-
-Future<SaveOpenResult> savePdfBytesAndMaybeOpen({
+Future<PdfSaveResult> savePdfBytesAndMaybeOpenStandalone({
   required String fileName,
-  required List<int> bytes,
-  required String subfolder,
+  required Uint8List bytes,
+  String subfolder = 'auditron/exports',
+  bool openAfterSave = true,
 }) async {
   final docs = await getApplicationDocumentsDirectory();
 
-  // subfolder like "Auditron/Letters"
-  final parts = subfolder.split('/').where((s) => s.trim().isNotEmpty).toList();
-  final folder = Directory(p.joinAll([docs.path, ...parts]));
+  final safeSub = _sanitizeSubfolder(subfolder);
+  final parts = <String>[
+    docs.path,
+    if (safeSub.isNotEmpty) ...safeSub.split('/'),
+  ];
 
-  if (!await folder.exists()) {
-    await folder.create(recursive: true);
+  final dirPath = p.joinAll(parts);
+  final outDir = Directory(dirPath);
+  if (!await outDir.exists()) {
+    await outDir.create(recursive: true);
   }
 
-  final outPath = p.join(folder.path, fileName);
+  final safeName = _sanitizeFileName(fileName);
+  final outPath = p.join(outDir.path, safeName);
+
   final f = File(outPath);
   await f.writeAsBytes(bytes, flush: true);
 
-  bool opened = false;
-  try {
-    final res = await OpenFilex.open(outPath);
-    opened = (res.type == ResultType.done);
-  } catch (_) {
-    opened = false;
+  bool didOpen = false;
+  if (openAfterSave) {
+    try {
+      final r = await OpenFilex.open(outPath);
+      didOpen = r.type == ResultType.done;
+    } catch (_) {
+      didOpen = false;
+    }
   }
 
-  return SaveOpenResult(
+  return PdfSaveResult(
     savedPath: outPath,
-    savedFileName: fileName,
-    didOpenFile: opened,
+    savedFileName: safeName,
+    didOpenFile: didOpen,
   );
+}
+
+String _sanitizeSubfolder(String input) {
+  final s = input.trim();
+  if (s.isEmpty) return '';
+  final normalized = s.replaceAll('\\', '/');
+  final segments = normalized
+      .split('/')
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty && e != '.' && e != '..')
+      .map((e) => e.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_'))
+      .toList();
+  return segments.join('/');
+}
+
+String _sanitizeFileName(String input) {
+  var s = input.trim();
+  if (s.isEmpty) s = 'export.pdf';
+
+  s = s.replaceAll('\\', '/');
+  if (s.contains('/')) s = s.split('/').last;
+
+  s = s.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+
+  if (s.length > 180) {
+    final ext = p.extension(s);
+    final base = p.basenameWithoutExtension(s);
+    s = base.substring(0, 180 - ext.length) + ext;
+  }
+  return s;
 }

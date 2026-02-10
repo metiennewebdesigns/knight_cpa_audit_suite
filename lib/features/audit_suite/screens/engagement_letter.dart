@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -21,7 +23,6 @@ import '../data/models/repositories/audit_planning_repository.dart';
 
 import '../services/file_save_open.dart';
 import '../services/reveal_folder.dart';
-
 
 class EngagementLetterScreen extends StatefulWidget {
   const EngagementLetterScreen({
@@ -54,7 +55,8 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
   final _dateCtrl = TextEditingController();
   final _preparedByCtrl = TextEditingController(text: 'Knight CPA Services');
   final _scopeCtrl = TextEditingController(
-    text: 'We will perform audit procedures and provide an audit packet including planning, risk assessment, and workpaper index.',
+    text:
+        'We will perform audit procedures and provide an audit packet including planning, risk assessment, and workpaper index.',
   );
 
   @override
@@ -152,7 +154,8 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
         : (planningSnippet.length <= 550 ? planningSnippet : '${planningSnippet.substring(0, 550)}…');
 
     final letterDate = _dateCtrl.text.trim().isEmpty ? _todayLong() : _dateCtrl.text.trim();
-    final preparedBy = _preparedByCtrl.text.trim().isEmpty ? 'Knight CPA Services' : _preparedByCtrl.text.trim();
+    final preparedBy =
+        _preparedByCtrl.text.trim().isEmpty ? 'Knight CPA Services' : _preparedByCtrl.text.trim();
     final scopeText = _scopeCtrl.text.trim().isEmpty ? '—' : _scopeCtrl.text.trim();
 
     pw.Widget heading(String text) => pw.Padding(
@@ -169,11 +172,8 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
           pw.SizedBox(height: 4),
           pw.Text('Engagement Letter', style: pw.TextStyle(fontSize: 14)),
           pw.SizedBox(height: 14),
-
           pw.Text(letterDate),
           pw.SizedBox(height: 10),
-
-          // ✅ Client block + contact lines
           pw.Text(clientName, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           if (clientLocation.isNotEmpty) pw.Text(clientLocation),
           if (contactLines.isNotEmpty) ...[
@@ -181,22 +181,17 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
             for (final line in contactLines) pw.Text(line),
           ],
           pw.SizedBox(height: 12),
-
           pw.Text('Re: ${eng.title}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           pw.Text('Engagement ID: ${eng.id}'),
           pw.SizedBox(height: 12),
-
           pw.Text('Dear $clientName,'),
           pw.SizedBox(height: 10),
-
           pw.Text(
             'This letter confirms our understanding of the scope and objectives of the engagement described above. '
             'We will work with your team to obtain records, perform procedures, and deliver a documented audit packet.',
           ),
-
           heading('Scope of Services'),
           pw.Text(scopeText),
-
           heading('Planning Snapshot'),
           pw.Bullet(text: 'Risk level: $riskLevel ($riskScore/5)'),
           pw.Bullet(text: 'Workpapers currently on file: $wpCount'),
@@ -212,22 +207,18 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
             ),
             child: pw.Text(snippet, style: const pw.TextStyle(fontSize: 10)),
           ),
-
           heading('Client Responsibilities'),
           pw.Bullet(text: 'Provide complete and accurate information in a timely manner.'),
           pw.Bullet(text: 'Maintain supporting documentation for transactions and balances.'),
           pw.Bullet(text: 'Designate a point of contact for requests and approvals.'),
-
           heading('Deliverables'),
           pw.Bullet(text: 'Audit Planning Summary'),
           pw.Bullet(text: 'Pre-Risk Assessment'),
           pw.Bullet(text: 'Workpapers Index and supporting attachments'),
           pw.Bullet(text: 'Audit Packet export (PDF/JSON)'),
-
           heading('Acceptance'),
           pw.Text('If the above correctly reflects your understanding, please sign and return this letter.'),
           pw.SizedBox(height: 18),
-
           pw.Row(
             children: [
               pw.Expanded(
@@ -296,10 +287,12 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
       final baseName = _safeFileName(vm.engagement.title);
       final fileName = 'EngagementLetter-$baseName-${vm.engagement.id}-$stamp.pdf';
 
-      final res = await savePdfBytesAndMaybeOpen(
+      // ✅ No extension method here — analyzer will stop whining.
+      final res = await savePdfBytesAndMaybeOpenStandalone(
         fileName: fileName,
-        bytes: bytes,
+        bytes: Uint8List.fromList(bytes),
         subfolder: 'Auditron/Letters',
+        openAfterSave: true,
       );
 
       _snack(res.didOpenFile ? 'Exported + opened ${res.savedFileName} ✅' : 'Exported ${res.savedFileName} ✅');
@@ -358,9 +351,11 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                 const SizedBox(height: 60),
                 const Icon(Icons.error_outline, size: 44),
                 const SizedBox(height: 10),
-                Text('Failed to load letter data.',
-                    style: Theme.of(context).textTheme.titleMedium,
-                    textAlign: TextAlign.center),
+                Text(
+                  'Failed to load letter data.',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 8),
                 Text(snap.error.toString(), textAlign: TextAlign.center),
               ],
@@ -391,7 +386,6 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                     ),
                   ),
                 if (!_canFile) const SizedBox(height: 12),
-
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.assignment_outlined),
@@ -400,7 +394,6 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -414,13 +407,19 @@ class _EngagementLetterScreenState extends State<EngagementLetterScreen> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: _preparedByCtrl,
-                        decoration: const InputDecoration(labelText: 'Prepared By (Firm Name)', border: OutlineInputBorder()),
+                        decoration: const InputDecoration(
+                          labelText: 'Prepared By (Firm Name)',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _scopeCtrl,
                         maxLines: 4,
-                        decoration: const InputDecoration(labelText: 'Scope of Services (editable)', border: OutlineInputBorder()),
+                        decoration: const InputDecoration(
+                          labelText: 'Scope of Services (editable)',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       FilledButton.icon(

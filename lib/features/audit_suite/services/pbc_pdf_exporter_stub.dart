@@ -1,7 +1,22 @@
-import 'file_save_open.dart';
+// lib/features/audit_suite/services/pbc_pdf_exporter_stub.dart
+//
+// Web-safe stub so the app compiles on web without dart:io.
+// Your UI already disables export on web demo (kIsWeb / canUseFileSystem).
+
+class PbcPdfExportResult {
+  final String savedPath;
+  final String savedFileName;
+  final bool didOpenFile;
+
+  const PbcPdfExportResult({
+    required this.savedPath,
+    required this.savedFileName,
+    required this.didOpenFile,
+  });
+}
 
 class PbcPdfExporter {
-  static Future<SaveOpenResult> export({
+  static Future<PbcPdfExportResult> export({
     required String engagementId,
     required String clientName,
     required String clientAddressLine,
@@ -9,6 +24,11 @@ class PbcPdfExporter {
     required String preparerLine2,
     required List<Map<String, dynamic>> itemsRaw,
   }) async {
-    throw UnsupportedError('PBC PDF export is disabled on web demo.');
+    // Web stub: no filesystem support. Keep call sites working.
+    return const PbcPdfExportResult(
+      savedPath: '',
+      savedFileName: 'pbc_export.pdf',
+      didOpenFile: false,
+    );
   }
 }
