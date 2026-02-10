@@ -12,7 +12,7 @@ Future<void> main() async {
   runApp(AuditronApp(store: store, themeMode: themeMode));
 }
 
-class AuditronApp extends StatelessWidget {
+class AuditronApp extends StatefulWidget {
   const AuditronApp({
     super.key,
     required this.store,
@@ -23,16 +23,23 @@ class AuditronApp extends StatelessWidget {
   final ValueNotifier<ThemeMode> themeMode;
 
   @override
+  State<AuditronApp> createState() => _AuditronAppState();
+}
+
+class _AuditronAppState extends State<AuditronApp> {
+  late final router = buildRouter(store: widget.store, themeMode: widget.themeMode);
+
+  @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeMode,
+      valueListenable: widget.themeMode,
       builder: (context, mode, _) {
         return MaterialApp.router(
           debugShowCheckedModeBanner: false,
           themeMode: mode,
           theme: ThemeData(useMaterial3: true),
           darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
-          routerConfig: buildRouter(store: store, themeMode: themeMode),
+          routerConfig: router, // ✅ SAME router instance (no reset on theme switch)
         );
       },
     );
